@@ -52,6 +52,7 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 - **推荐**：UniClaw 推荐技能目录（元景网关 `/uniclaw/recommended-skills`），点 `+` 一键安装。安装时校验包大小与 sha256
 - **技能市场**：万悟技能广场（`/wanwu/api/skills/*` 代理），支持分类筛选，点 `+` 安装
 - **已安装**：启用/停用开关、查看 SKILL.md、卸载；也可 **上传技能**（.zip / .skill，包内根目录须有带 `name`/`description` frontmatter 的 SKILL.md）
+- **内置技能**：UniClaw app 打包内置的 14 个 public skills（canvas-design / dws / pptx-plus-linux / uniai-docx 等）随插件分发在 `uniclaw-shell/skills/`，由插件注册的 `uniclaw-bundled` SkillProvider 以 bundled rank（600）进入目录 —— 项目/用户同名技能会覆盖内置。内置技能可停用（落盘 `~/.dsh/uniclaw-builtin-disabled.json`，provider invalidate 即时生效）但不可卸载
 
 安装即生效，无需重启：技能落盘到 `~/.dsh/skills/<name>/`，这正是 harness 自带 `dsh-skill-filesystem` provider 监听的 user-dsh 根（rank 400，chokidar live watch）。技能随后自动进入对话的 `<available_skills>` 目录（`dsh-tool-skill` 注入），模型在对话里用 `skill` 工具即可加载运行。停用 = 移动到 `~/.dsh/skills-inactive/`（脱离扫描根），启用 = 移回。
 
@@ -73,6 +74,7 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 - 注册的路由：`/api/uniclaw/login/{captcha,sendCode,smsLogin}`、`/api/uniclaw/my-plan`、`/api/uniclaw/status`（均为元景网关代理）、`/uniclaw`（一期登录页）
 - 技能模块：[src/skills.ts](src/skills.ts)（API + 安装管线 + 内置 zip 解包，页面在 [src/skills-page.ts](src/skills-page.ts)）。前缀路由 `/api/uniclaw/skills`：`GET installed | market/{categories,list,detail} | recommended/{categories,list} | content?name=`，`POST market/install | recommended/install | upload?filename= | toggle | delete`；页面 `/uniclaw/skills`。语义对齐 UniClaw 后端 `routes/skills.py`（安装幂等按市场 id、409 结构化 `skill_conflict`、推荐包 path/size/sha256 校验）
 - 技能包解包为内置最小 zip 读取器（node:zlib inflateRaw，central directory 遍历，拒绝 `..`/绝对路径/zip64），因为绝对路径挂载的插件无法引入 unzip 依赖
+- 内置技能 provider：[src/skills-bundled.ts](src/skills-bundled.ts)（`ctx.skills.registerProvider`，样板是 `dsh-skill-badge`），frontmatter 工具共享在 [src/skill-md.ts](src/skill-md.ts)。技能源拷自 UniClaw `backend/skills/public`（已剔除 `__pycache__`/`.pyc`），更新方式为重拷 + 重启
 - 协议映射与 UniClaw 后端 `agent_manager._make_chat_model` 保持一致：`provider=yuanjing|anthropic` → `anthropic-messages`（SDK 拼 `/v1/messages`），其余 → `openai-completions`（拼 `/chat/completions`）
 - my-plan 语义与 UniClaw 相同：有效 payload 全量覆盖模型目录，无效 payload 保留本地 last-known-good；顶层 `apiKey` 每次刷新回写凭据（兑换 `updateKey` 轮换场景）
 - 调试：`UNICLAW_SHELL_DEBUG=1` 启动会多注册 `POST /api/uniclaw/debug/materialize`，可手喂 my-plan payload 测物化，勿在正式环境开

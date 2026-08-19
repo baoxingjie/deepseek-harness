@@ -22,6 +22,8 @@ import { inflateRawSync } from 'node:zlib'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import { SKILLS_PAGE_HTML } from './skills-page.ts'
+import { SKILL_NAME, kebabOf, parseFrontmatter, rewriteFrontmatter } from './skill-md.ts'
+import { bundledContent, bundledNames, listBundled, registerBundledSkills, setBundledEnabled } from './skills-bundled.ts'
 
 // ── Gateway endpoints (env-overridable, same knobs as the UniClaw app) ──
 const MARKET_BASE = (process.env.UNICLAW_SKILL_MARKET_BASE_URL ?? 'https://maas.ai-yuanjing.com/app/gateway/wanwu').replace(/\/+$/, '')
@@ -31,9 +33,6 @@ const DOWNLOAD_TIMEOUT_MS = 60_000
 const MAX_PACKAGE_BYTES = 100 * 1024 * 1024
 const MAX_UNCOMPRESSED_BYTES = 300 * 1024 * 1024
 const MAX_ARCHIVE_ENTRIES = 5_000
-
-/** Harness skill-name grammar (packages/skill/skill isSkillName). */
-const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 const API_PREFIX = '/api/uniclaw/skills'
 
@@ -58,8 +57,10 @@ class HttpError extends Error {
   }
 }
 
-/** Register the skill API routes and the `/uniclaw/skills` page. */
+/** Register the bundled-skills provider, the skill API routes, and the `/uniclaw/skills` page. */
 export function registerSkillModule(ctx: Context): void {
+  registerBundledSkills(ctx)
+
   ctx.webServer.register({
     kind: 'prefix',
     path: API_PREFIX,
@@ -148,6 +149,8 @@ interface InstalledSkill {
   source: string
   mtimeMs: number
   meta?: Record<string, unknown>
+  /** Shipped with the plugin: toggleable but not deletable. */
+  builtin?: boolean
 }
 
 async function listInstalled(): Promise<{ skills: InstalledSkill[] }> {
@@ -187,6 +190,21 @@ async function listInstalled(): Promise<{ skills: InstalledSkill[] }> {
     }
   }
   skills.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  // Builtin skills sit after user-managed entries, mirroring the UniClaw
+  // app's public-category grouping; a same-name user skill shadows the
+  // builtin in the harness catalog (rank 400 beats 600) but both rows stay
+  // visible here with distinct provenance.
+  for (const bundled of await listBundled()) {
+    skills.push({
+      name: bundled.name,
+      dir: bundled.name,
+      description: bundled.description,
+      enabled: bundled.enabled,
+      source: 'builtin',
+      mtimeMs: 0,
+      builtin: true,
+    })
+  }
   return { skills }
 }
 
@@ -197,6 +215,7 @@ async function toggleSkill(body: Record<string, unknown>): Promise<{ name: strin
   const to = join(enabled ? skillsRoot() : inactiveRoot(), dir)
   if (!await exists(from)) {
     if (await exists(to)) return { name: dir, enabled } // already in the requested state
+    if (await setBundledEnabled(dir, enabled)) return { name: dir, enabled }
     throw new HttpError(404, `Skill not found: ${dir}`)
   }
   await mkdir(dirname(to), { recursive: true })
@@ -215,7 +234,10 @@ async function deleteSkill(body: Record<string, unknown>): Promise<{ name: strin
       break
     }
   }
-  if (!removed) throw new HttpError(404, `Skill not found: ${dir}`)
+  if (!removed) {
+    if ((await bundledNames()).has(dir)) throw new HttpError(400, '内置技能不可卸载，可以停用')
+    throw new HttpError(404, `Skill not found: ${dir}`)
+  }
   const meta = await readMeta()
   if (dir in meta) {
     delete meta[dir]
@@ -234,6 +256,8 @@ async function skillContent(name: string): Promise<{ name: string; content: stri
       } catch { /* try the next layout */ }
     }
   }
+  const bundled = await bundledContent(dir)
+  if (bundled !== undefined) return { name: dir, content: bundled }
   throw new HttpError(404, `Skill not found: ${dir}`)
 }
 
@@ -360,11 +384,15 @@ async function installArchive(
     text = rewriteFrontmatter(text, name, description)
   }
 
-  const conflictRoot = [skillsRoot(), inactiveRoot()]
-  for (const root of conflictRoot) {
+  // Conflicts against every category, builtins included (UniClaw parity —
+  // a same-name install would otherwise silently shadow the builtin).
+  for (const root of [skillsRoot(), inactiveRoot()]) {
     if (await exists(join(root, name))) {
       throw new HttpError(409, { code: 'skill_conflict', name, existing_name: name })
     }
+  }
+  if ((await bundledNames()).has(name)) {
+    throw new HttpError(409, { code: 'skill_conflict', name, existing_name: name, category: 'builtin' })
   }
 
   const dest = join(skillsRoot(), name)
@@ -484,53 +512,6 @@ function safeJoin(dest: string, relPath: string): string {
     throw new HttpError(400, 'Invalid archive file.')
   }
   return target
-}
-
-// ── SKILL.md frontmatter ──
-
-interface Frontmatter { name?: string; description?: string }
-
-/** Parse the `name` and `description` keys of a SKILL.md frontmatter block. */
-function parseFrontmatter(text: string): Frontmatter | undefined {
-  const match = /^﻿?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
-  if (match === null) return undefined
-  const lines = match[1]!.split(/\r?\n/)
-  const result: Frontmatter = {}
-  for (let i = 0; i < lines.length; i++) {
-    const kv = /^(name|description):\s*(.*)$/.exec(lines[i]!)
-    if (kv === null) continue
-    const key = kv[1] as 'name' | 'description'
-    let value = kv[2]!.trim()
-    if (value === '|' || value === '>' || value === '|-' || value === '>-') {
-      // Block scalar: join the following indented lines for display purposes.
-      const block: string[] = []
-      for (let j = i + 1; j < lines.length && /^\s+\S/.test(lines[j]!); j++) block.push(lines[j]!.trim())
-      value = block.join(' ')
-    }
-    value = value.replace(/^["']|["']$/g, '')
-    if (result[key] === undefined) result[key] = value
-  }
-  return result
-}
-
-/** Rewrite (or insert) the frontmatter `name`, backfilling `description`. */
-function rewriteFrontmatter(text: string, name: string, description: string): string {
-  const match = /^(﻿?---\r?\n)([\s\S]*?)(\r?\n---(?:\r?\n|$))/.exec(text)
-  if (match === null) return text
-  let block = match[2]!
-  const quote = (v: string) => `"${v.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
-  block = /^name:.*$/m.test(block)
-    ? block.replace(/^name:.*$/m, `name: ${name}`)
-    : `name: ${name}\n${block}`
-  if (!/^description:/m.test(block)) {
-    block = `${block}\ndescription: ${quote(description)}`
-  }
-  return text.slice(0, match[1]!.length) + block + match[3]! + text.slice(match[0].length)
-}
-
-/** Best-effort kebab-case slug; empty when nothing latin/numeric survives. */
-function kebabOf(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 // ── Provenance manifest ──

@@ -320,9 +320,9 @@ function renderInstalledCards() {
       + '<input type="checkbox" class="toggle-box" data-dir="' + esc(s.dir) + '"' + (s.enabled ? ' checked' : '') + (busy ? ' disabled' : '') + '>'
       + '<span class="track"></span><span class="knob"></span></label>'
       + '<button class="iconbtn view-btn" data-dir="' + esc(s.dir) + '" title="查看 SKILL.md">&#128196;</button>'
-      + '<button class="iconbtn del-btn" data-dir="' + esc(s.dir) + '" title="卸载" ' + (busy ? 'disabled' : '') + '>&#128465;</button>'
+      + (s.builtin ? '' : '<button class="iconbtn del-btn" data-dir="' + esc(s.dir) + '" title="卸载" ' + (busy ? 'disabled' : '') + '>&#128465;</button>')
       + '</div>'
-    const sourceLabel = { market: '技能市场', recommended: '推荐', upload: '上传', local: '本地' }[s.source] || s.source
+    const sourceLabel = { market: '技能市场', recommended: '推荐', upload: '上传', local: '本地', builtin: '内置' }[s.source] || s.source
     html += cardShell(displayName, s.description, sourceLabel + ' · ' + s.dir + (s.enabled ? '' : ' · 已停用'), action)
   }
   return html || '<div class="empty">还没有安装技能 — 到「推荐」或「技能市场」里挑一个，或上传 .zip/.skill 包</div>'

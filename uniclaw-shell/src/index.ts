@@ -23,7 +23,7 @@ import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { registerSkillModule } from './skills.ts'
 
 export const name = 'uniclaw-shell'
-export const inject = ['webServer', 'settings', 'credentials']
+export const inject = ['webServer', 'settings', 'credentials', 'skills']
 
 // ── Gateway endpoints (env-overridable for enterprise deployments) ──
 const AUTH_BASE = process.env.UNICLAW_AUTH_BASE ?? 'https://maas.ai-yuanjing.com/app'
