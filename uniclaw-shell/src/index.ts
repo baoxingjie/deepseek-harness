@@ -20,6 +20,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { registerSkillModule } from './skills.ts'
 
 export const name = 'uniclaw-shell'
 export const inject = ['webServer', 'settings', 'credentials']
@@ -227,6 +228,9 @@ export function apply(ctx: Context) {
       },
     })
   }
+
+  // ── 扩展-技能 module (marketplace / recommended / installed) ──
+  registerSkillModule(ctx)
 
   console.log(`[uniclaw-shell] loaded — login page at /uniclaw (gateway: ${AUTH_BASE})`)
 }

@@ -1,6 +1,6 @@
 # uniclaw-shell
 
-DeepSeek Harness 的 UniClaw（元景网关）集成插件：短信验证码登录 + 套餐/模型目录自动配置。纯插件实现，不改 harness 核心代码，通过 cordis.yml patch 覆盖层挂载。
+DeepSeek Harness 的 UniClaw（元景网关）集成插件：短信验证码登录 + 套餐/模型目录自动配置 + 扩展-技能（推荐/技能市场/已安装）。纯插件实现，不改 harness 核心代码，通过 cordis.yml patch 覆盖层挂载。
 
 ## 环境要求
 
@@ -45,6 +45,18 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
    - 首次使用需 **选择工作区**（添加任意项目目录），否则输入框不可用
    - 模型选择器里选 UniClaw 元景下的模型（DeepSeek V4 Flash / GLM 5.2 / Qwen3 等），直接对话
 
+## 扩展-技能（Skills）
+
+打开 **http://127.0.0.1:3082/uniclaw/skills**（与 UniClaw app「扩展 → 技能」同源的三个页签）：
+
+- **推荐**：UniClaw 推荐技能目录（元景网关 `/uniclaw/recommended-skills`），点 `+` 一键安装。安装时校验包大小与 sha256
+- **技能市场**：万悟技能广场（`/wanwu/api/skills/*` 代理），支持分类筛选，点 `+` 安装
+- **已安装**：启用/停用开关、查看 SKILL.md、卸载；也可 **上传技能**（.zip / .skill，包内根目录须有带 `name`/`description` frontmatter 的 SKILL.md）
+
+安装即生效，无需重启：技能落盘到 `~/.dsh/skills/<name>/`，这正是 harness 自带 `dsh-skill-filesystem` provider 监听的 user-dsh 根（rank 400，chokidar live watch）。技能随后自动进入对话的 `<available_skills>` 目录（`dsh-tool-skill` 注入），模型在对话里用 `skill` 工具即可加载运行。停用 = 移动到 `~/.dsh/skills-inactive/`（脱离扫描根），启用 = 移回。
+
+注意：harness 只接受 kebab-case 技能名（`^[a-z0-9]+(-[a-z0-9]+)*$`）。安装管线会自动把不合规的 frontmatter `name` 规范化重写（中文名取拉丁片段或回退到包名/哈希），原始名字保留在安装元数据 `~/.dsh/uniclaw-skills-meta.json` 的 `displayName` 里供页面展示。
+
 ## 常见问题
 
 | 现象 | 处理 |
@@ -59,9 +71,11 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 
 - 插件入口：[src/index.ts](src/index.ts)，Host 半侧 only（一期）。零运行时 import（`import type` only），因为它以绝对路径挂载、不在任何 node_modules 解析域内
 - 注册的路由：`/api/uniclaw/login/{captcha,sendCode,smsLogin}`、`/api/uniclaw/my-plan`、`/api/uniclaw/status`（均为元景网关代理）、`/uniclaw`（一期登录页）
+- 技能模块：[src/skills.ts](src/skills.ts)（API + 安装管线 + 内置 zip 解包，页面在 [src/skills-page.ts](src/skills-page.ts)）。前缀路由 `/api/uniclaw/skills`：`GET installed | market/{categories,list,detail} | recommended/{categories,list} | content?name=`，`POST market/install | recommended/install | upload?filename= | toggle | delete`；页面 `/uniclaw/skills`。语义对齐 UniClaw 后端 `routes/skills.py`（安装幂等按市场 id、409 结构化 `skill_conflict`、推荐包 path/size/sha256 校验）
+- 技能包解包为内置最小 zip 读取器（node:zlib inflateRaw，central directory 遍历，拒绝 `..`/绝对路径/zip64），因为绝对路径挂载的插件无法引入 unzip 依赖
 - 协议映射与 UniClaw 后端 `agent_manager._make_chat_model` 保持一致：`provider=yuanjing|anthropic` → `anthropic-messages`（SDK 拼 `/v1/messages`），其余 → `openai-completions`（拼 `/chat/completions`）
 - my-plan 语义与 UniClaw 相同：有效 payload 全量覆盖模型目录，无效 payload 保留本地 last-known-good；顶层 `apiKey` 每次刷新回写凭据（兑换 `updateKey` 轮换场景）
 - 调试：`UNICLAW_SHELL_DEBUG=1` 启动会多注册 `POST /api/uniclaw/debug/materialize`，可手喂 my-plan payload 测物化，勿在正式环境开
-- 环境变量：`UNICLAW_AUTH_BASE` / `UNICLAW_GATEWAY_BASE` / `UNICLAW_APPLICATION`（企业部署换网关用）
+- 环境变量：`UNICLAW_AUTH_BASE` / `UNICLAW_GATEWAY_BASE` / `UNICLAW_APPLICATION`（企业部署换网关用）；技能模块另有 `UNICLAW_SKILL_MARKET_BASE_URL` / `UNICLAW_RECOMMENDED_SKILLS_BASE_URL`（与 UniClaw app 同名开关）
 
 二期计划：客户端半侧插件（登录卡片进设置页、套餐/用量展示），打包成正式 npm 包消掉绝对路径限制。
