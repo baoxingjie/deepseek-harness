@@ -7,10 +7,15 @@
  * materializes the my-plan model catalog into the `llm-pi-ai` provider
  * settings so the models become selectable without a restart.
  *
- * IMPORTANT: this file must stay free of runtime imports. It is loaded by
- * absolute path via a cordis.yml patch (like the scratch-plugin tutorial),
- * outside any package with its own node_modules — `import type` only.
+ * IMPORTANT: this file must stay free of runtime *package* imports. It is
+ * loaded by absolute path via a cordis.yml patch (like the scratch-plugin
+ * tutorial), outside any package with its own node_modules — workspace
+ * packages are `import type` only. Node builtins resolve natively and are
+ * fine.
  */
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -158,6 +163,17 @@ export function apply(ctx: Context) {
         ctx.credentials.describe(JWT_REF),
         ctx.credentials.describe(APP_TOKEN_REF),
       ])
+      // The plan snapshot is in-memory; after a restart, lazily re-pull
+      // my-plan so the login page shows the plan and the key/model catalog
+      // re-syncs on first visit.
+      if (jwt.configured && !lastPlan) {
+        try {
+          const resolved = await ctx.credentials.resolve(JWT_REF)
+          if (resolved) await refreshMyPlan(ctx, resolved.value)
+        } catch (error) {
+          console.warn('[uniclaw-shell] lazy my-plan refresh failed:', error)
+        }
+      }
       sendJson(res, 200, {
         loggedIn: jwt.configured,
         appTokenConfigured: appToken.configured,
@@ -167,7 +183,9 @@ export function apply(ctx: Context) {
     },
   })
 
-  // ── Minimal login page (phase 1 stand-in for the client-bundle UI) ──
+  // ── Login page (phase 1 stand-in for the client-bundle UI) ──
+  // Markup and styles are ported from UniClaw's LoginPage.tsx/.css so the
+  // shell matches the app's look; the brand logo ships with the plugin.
 
   ctx.webServer.register({
     kind: 'exact',
@@ -176,6 +194,19 @@ export function apply(ctx: Context) {
       res.statusCode = 200
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
       res.end(LOGIN_PAGE_HTML)
+    },
+  })
+
+  ctx.webServer.register({
+    kind: 'exact',
+    path: '/uniclaw/brand-logo.png',
+    handler: async (_req, res) => {
+      const here = dirname(fileURLToPath(import.meta.url))
+      const png = await readFile(join(here, '../assets/brand-logo.png'))
+      res.statusCode = 200
+      res.setHeader('Content-Type', 'image/png')
+      res.setHeader('Cache-Control', 'public, max-age=86400')
+      res.end(png)
     },
   })
 
@@ -218,8 +249,9 @@ async function refreshMyPlan(ctx: Context, jwt: string): Promise<Record<string, 
   }
   const summary = await materializeModels(ctx, payload)
   if (summary) lastMaterialized = { ...summary, at: new Date().toISOString() }
-  // Keep the snapshot small: the models string is config, not display state.
-  const { models: _models, ...planOnly } = payload
+  // Keep the snapshot small and secret-free: the models string is config,
+  // and the apiKey lives in the credential store, not in status responses.
+  const { models: _models, apiKey: _apiKey, ...planOnly } = payload
   lastPlan = planOnly
   return payload
 }
@@ -358,49 +390,135 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
-// ── Phase-1 login page ──
+// ── Phase-1 login page (ported from UniClaw LoginPage.tsx/.css) ──
 
 const LOGIN_PAGE_HTML = /* html */ `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UniClaw 登录</title>
+<title>元景 UniClaw</title>
 <style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 420px; margin: 48px auto; padding: 0 16px; }
-  h1 { font-size: 20px; }
-  .row { display: flex; gap: 8px; margin: 10px 0; align-items: center; }
-  input { flex: 1; padding: 8px 10px; font-size: 14px; border: 1px solid #8884; border-radius: 6px; background: transparent; color: inherit; }
-  button { padding: 8px 14px; font-size: 14px; border: 1px solid #8886; border-radius: 6px; background: #4a6cf71a; cursor: pointer; color: inherit; }
-  button:disabled { opacity: .5; cursor: default; }
-  img.captcha { height: 38px; border-radius: 6px; cursor: pointer; border: 1px solid #8884; }
-  #msg { margin-top: 14px; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
-  .ok { color: #1a7f37; } .err { color: #d1242f; }
-  a { color: #4a6cf7; }
+  body { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+  .login-container {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; background: #f9fafb;
+    animation: fadeInUp 0.6s ease-out;
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .login-card { width: 100%; max-width: 400px; padding: 40px 32px; }
+  .login-header { display: flex; align-items: center; justify-content: center; margin-bottom: 24px; }
+  .login-logo { max-width: 100%; height: auto; object-fit: contain; }
+
+  .login-status {
+    text-align: center; font-size: 13px; color: #6b7280; margin-bottom: 20px;
+  }
+  .login-status a { color: #2563eb; text-decoration: none; }
+  .login-status a:hover { text-decoration: underline; }
+
+  .login-field { margin-bottom: 16px; }
+  .login-input-group {
+    display: flex; align-items: stretch;
+    border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; background: #fff;
+  }
+  .login-input-group:focus-within {
+    border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  }
+  .login-addon {
+    display: flex; align-items: center; padding: 0 12px;
+    font-size: 14px; color: #374151; background: #f9fafb;
+    border-right: 1px solid #d1d5db; white-space: nowrap; user-select: none;
+  }
+  .login-input {
+    flex: 1; border: none; outline: none; padding: 10px 12px;
+    font-size: 14px; color: #111827; background: transparent; min-width: 0;
+  }
+  .login-input::placeholder { color: #9ca3af; }
+  .login-captcha-img {
+    display: flex; align-items: center; justify-content: center;
+    width: 80px; min-height: 40px; background: #f3f4f6;
+    cursor: pointer; border-left: 1px solid #d1d5db; flex-shrink: 0;
+  }
+  .login-captcha-img img { width: 100%; height: 100%; object-fit: contain; }
+  .login-captcha-loading { font-size: 11px; color: #9ca3af; }
+  .login-send-btn {
+    flex-shrink: 0; width: 112px; border: none; border-left: 1px solid #d1d5db;
+    background: #fff; color: #2563eb; font-size: 13px; cursor: pointer;
+    padding: 0 8px; white-space: nowrap;
+  }
+  .login-send-btn:hover:not(:disabled) { background: #eff6ff; }
+  .login-send-btn:disabled { color: #9ca3af; cursor: not-allowed; }
+  .login-error { color: #dc2626; font-size: 14px; text-align: center; margin-bottom: 12px; }
+  .login-success { color: #16a34a; font-size: 14px; text-align: center; margin-bottom: 12px; }
+  .login-btn {
+    width: 100%; height: 44px; border: none; border-radius: 6px;
+    background: #2563eb; color: #fff; font-size: 16px; font-weight: 500;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .login-btn:hover:not(:disabled) { background: #1d4ed8; }
+  .login-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+
+  @media (prefers-color-scheme: dark) {
+    .login-container { background: #111827; }
+    .login-input-group { border-color: #374151; background: #1f2937; }
+    .login-input-group:focus-within { border-color: #3b82f6; }
+    .login-addon { background: #111827; border-color: #374151; color: #d1d5db; }
+    .login-input { color: #f9fafb; }
+    .login-input::placeholder { color: #6b7280; }
+    .login-captcha-img { background: #1f2937; border-color: #374151; }
+    .login-send-btn { background: #1f2937; border-color: #374151; color: #60a5fa; }
+    .login-send-btn:hover:not(:disabled) { background: #263348; }
+    .login-status { color: #9ca3af; }
+    .login-status a { color: #60a5fa; }
+    .login-logo { filter: brightness(0) invert(1); }
+  }
 </style>
 </head>
 <body>
-<h1>UniClaw 登录</h1>
-<div id="status"></div>
-<div class="row">
-  <input id="phone" placeholder="手机号" maxlength="11" inputmode="numeric">
+<div class="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <img class="login-logo" src="/uniclaw/brand-logo.png" alt="元景 UniClaw">
+    </div>
+    <div class="login-status" id="status"></div>
+    <div class="login-field">
+      <div class="login-input-group">
+        <span class="login-addon">+86</span>
+        <input type="tel" class="login-input" id="phone" placeholder="请输入手机号" maxlength="11">
+      </div>
+    </div>
+    <div class="login-field">
+      <div class="login-input-group">
+        <input type="text" class="login-input" id="captchaCode" placeholder="请输入图形验证码">
+        <div class="login-captcha-img" id="captchaBox" title="点击刷新">
+          <span class="login-captcha-loading">加载中...</span>
+        </div>
+      </div>
+    </div>
+    <div class="login-field">
+      <div class="login-input-group">
+        <input type="text" class="login-input" id="smsCode" placeholder="请输入短信验证码" maxlength="6">
+        <button class="login-send-btn" id="sendBtn" disabled>发送验证码</button>
+      </div>
+    </div>
+    <div id="msg"></div>
+    <button class="login-btn" id="loginBtn" disabled>登录</button>
+  </div>
 </div>
-<div class="row">
-  <input id="captchaCode" placeholder="图形验证码">
-  <img id="captchaImg" class="captcha" title="点击刷新" alt="验证码加载中">
-</div>
-<div class="row">
-  <input id="smsCode" placeholder="短信验证码" maxlength="6" inputmode="numeric">
-  <button id="sendBtn">发送验证码</button>
-</div>
-<div class="row">
-  <button id="loginBtn" style="flex:1">登录</button>
-</div>
-<div id="msg"></div>
 <script>
-const $ = (id) => document.getElementById(id)
+const $ = function (id) { return document.getElementById(id) }
 let captchaId = ''
+let countdown = 0
+let countdownTimer = null
+let loading = false
+
+function phoneValid() { return /^1[3-9]\\d{9}$/.test($('phone').value) }
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined
@@ -410,18 +528,40 @@ async function api(path, body) {
 }
 
 function say(text, ok) {
-  const el = $('msg')
-  el.textContent = text
-  el.className = ok ? 'ok' : 'err'
+  $('msg').innerHTML = text
+    ? '<div class="' + (ok ? 'login-success' : 'login-error') + '"></div>'
+    : ''
+  if (text) $('msg').firstChild.textContent = text
+}
+
+function syncButtons() {
+  $('sendBtn').disabled = !phoneValid() || !$('captchaCode').value.trim() || countdown > 0
+  $('loginBtn').disabled = !phoneValid() || !$('smsCode').value.trim() || loading
+  $('sendBtn').textContent = countdown > 0 ? countdown + 's后重发' : '发送验证码'
+  $('loginBtn').textContent = loading ? '登录中...' : '登录'
+}
+
+function startCountdown() {
+  countdown = 60
+  syncButtons()
+  countdownTimer = setInterval(function () {
+    countdown -= 1
+    if (countdown <= 0) { clearInterval(countdownTimer); countdown = 0 }
+    syncButtons()
+  }, 1000)
 }
 
 async function loadCaptcha() {
   try {
     const r = await api('/api/uniclaw/login/captcha')
-    captchaId = r?.data?.captchaId || ''
-    if (r?.data?.b64s) $('captchaImg').src = r.data.b64s
-    else say('验证码加载失败: ' + (r?.msg || JSON.stringify(r)), false)
-  } catch (e) { say('验证码加载失败: ' + e, false) }
+    if (r && r.data && r.data.b64s) {
+      captchaId = r.data.captchaId || ''
+      $('captchaBox').innerHTML = '<img alt="captcha">'
+      $('captchaBox').firstChild.src = r.data.b64s
+    } else {
+      say('验证码加载失败: ' + ((r && r.msg) || '网关无响应'), false)
+    }
+  } catch (e) { say('验证码加载失败，点击验证码框重试', false) }
 }
 
 async function loadStatus() {
@@ -429,42 +569,72 @@ async function loadStatus() {
     const s = await api('/api/uniclaw/status')
     if (s.loggedIn) {
       const plan = s.plan || {}
-      const mat = s.materialized
-      $('status').innerHTML = '<p class="ok">已登录 · 套餐: ' + (plan.productName || '未知')
-        + (plan.status ? ' (' + plan.status + ')' : '')
-        + (mat ? ' · 已物化 ' + mat.modelCount + ' 个模型' : '')
-        + ' · <a href="/">进入工作台</a></p>'
+      $('status').innerHTML = '已登录'
+        + (plan.productName ? ' · ' + plan.productName : '')
+        + ' · <a href="/">进入工作台 →</a>'
     }
-  } catch {}
+  } catch (e) { /* status is decorative */ }
 }
 
-$('captchaImg').onclick = loadCaptcha
+$('captchaBox').onclick = loadCaptcha
 
-$('sendBtn').onclick = async () => {
-  $('sendBtn').disabled = true
+$('phone').oninput = function () {
+  this.value = this.value.replace(/\\D/g, '').slice(0, 11)
+  syncButtons()
+}
+$('captchaCode').oninput = syncButtons
+$('smsCode').oninput = function () {
+  this.value = this.value.replace(/\\D/g, '').slice(0, 6)
+  syncButtons()
+}
+
+$('sendBtn').onclick = async function () {
+  say('', true)
   try {
     const r = await api('/api/uniclaw/login/sendCode', {
-      phone: $('phone').value.trim(), captchaCode: $('captchaCode').value.trim(), captchaId,
-    })
-    if (r.code === 0) say('验证码已发送', true)
-    else { say(r.msg || JSON.stringify(r), false); loadCaptcha() }
-  } catch (e) { say('发送失败: ' + e, false) }
-  finally { $('sendBtn').disabled = false }
-}
-
-$('loginBtn').onclick = async () => {
-  $('loginBtn').disabled = true
-  try {
-    const r = await api('/api/uniclaw/login/smsLogin', {
-      phone: $('phone').value.trim(), smsCode: $('smsCode').value.trim(),
+      phone: $('phone').value, captchaCode: $('captchaCode').value.trim(), captchaId: captchaId,
     })
     if (r.code === 0) {
-      say('登录成功' + (r.data && r.data.app_token ? '，模型已配置' : '，但账号暂无可用密钥'), true)
-      loadStatus()
-    } else say(r.msg || JSON.stringify(r), false)
-  } catch (e) { say('登录失败: ' + e, false) }
-  finally { $('loginBtn').disabled = false }
+      startCountdown()
+    } else {
+      say(r.msg || '发送失败', false)
+      $('captchaCode').value = ''
+      loadCaptcha()
+      syncButtons()
+    }
+  } catch (e) { say('发送失败，请检查网络', false) }
 }
+
+$('loginBtn').onclick = async function () {
+  loading = true
+  syncButtons()
+  say('', true)
+  try {
+    const r = await api('/api/uniclaw/login/smsLogin', {
+      phone: $('phone').value, smsCode: $('smsCode').value,
+    })
+    if (r.code === 0) {
+      say(r.data && r.data.app_token ? '登录成功，正在进入工作台...' : '登录成功，但账号暂无可用密钥', true)
+      if (r.data && r.data.app_token) {
+        setTimeout(function () { location.href = '/' }, 900)
+      } else {
+        loadStatus()
+      }
+    } else {
+      if (r.msg && r.msg.indexOf('验证码失效') !== -1) {
+        $('captchaCode').value = ''
+        $('smsCode').value = ''
+        loadCaptcha()
+      }
+      say(r.msg || '登录失败', false)
+    }
+  } catch (e) { say('登录失败，请检查网络', false) }
+  finally { loading = false; syncButtons() }
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !$('loginBtn').disabled) $('loginBtn').onclick()
+})
 
 loadCaptcha()
 loadStatus()
