@@ -568,6 +568,12 @@ async function loadStatus() {
   try {
     const s = await api('/api/uniclaw/status')
     if (s.loggedIn) {
+      // Already logged in: go straight to the workbench. ?stay=1 is the
+      // re-login escape hatch (switch account / refresh key).
+      if (!new URLSearchParams(location.search).has('stay')) {
+        location.replace('/')
+        return
+      }
       const plan = s.plan || {}
       $('status').innerHTML = '已登录'
         + (plan.productName ? ' · ' + plan.productName : '')
