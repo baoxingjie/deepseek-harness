@@ -18,6 +18,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+// Type-only: merges `webServer` into Context.
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { registerSkillModule } from './skills.ts'
@@ -239,8 +241,8 @@ export function apply(ctx: Context) {
   // Mount MCP servers from the stored login state; UniAI-Toolkit stays
   // unmounted until a key exists, key-free servers mount right away.
   void ctx.credentials.resolve(APP_TOKEN_REF)
-    .then(token => requestMcpSync(ctx, token?.value ?? ''))
-    .catch(() => requestMcpSync(ctx, ''))
+    .then((token) => { requestMcpSync(ctx, token?.value ?? '') })
+    .catch(() => { requestMcpSync(ctx, '') })
 
   console.log(`[uniclaw-shell] loaded — login page at /uniclaw (gateway: ${AUTH_BASE})`)
 }
@@ -310,11 +312,13 @@ async function materializeModels(
     index += 1
     const seen = new Set<string>()
     const models = entries.flatMap((m) => {
-      if (seen.has(m.model!)) return []
-      seen.add(m.model!)
+      const id = m.model
+      // `routes` is keyed while grouping, which already dropped model-less rows.
+      if (id === undefined || seen.has(id)) return []
+      seen.add(id)
       modelCount += 1
       return [{
-        id: m.model!,
+        id,
         ...(m.display_name ? { name: m.display_name } : {}),
         ...(typeof m.context_window === 'number' ? { contextWindow: m.context_window } : {}),
         ...(typeof m.max_tokens === 'number' ? { maxTokens: m.max_tokens } : {}),

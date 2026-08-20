@@ -1,5 +1,5 @@
 # UniClaw shell overlay — apply with:
-#   pnpm dsh web --patch ./uniclaw-shell/cordis.yml
+#   pnpm dsh web --patch ./packages/uniclaw/uniclaw-shell/cordis.yml
 # Patch overlay over the web profile (see examples/web-cordis/cordis.yml).
 
 # Keep the shell off the default 3080 during development.
@@ -10,4 +10,4 @@
 
 - insert:
     - id: uniclaw-shell
-      name: '/Users/bxj/maas/deepseek/deepseek-harness/uniclaw-shell/src/index.ts'
+      name: '@deepseek-ai/dsh-uniclaw-shell'

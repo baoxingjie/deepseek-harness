@@ -137,7 +137,7 @@ export function registerBundledSkills(ctx: Context): void {
     control.signal.addEventListener('abort', () => { invalidateCatalog = undefined }, { once: true })
     return provider
   })
-  void scanBundled().then(entries => {
+  void scanBundled().then((entries) => {
     console.log(`[uniclaw-shell] bundled skills provider registered — ${entries.length} skill(s) shipped`)
   })
 }

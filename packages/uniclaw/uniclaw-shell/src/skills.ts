@@ -21,6 +21,8 @@ import { dirname, join, resolve } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+// Type-only: merges `webServer` into Context.
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import { SKILLS_PAGE_HTML } from './skills-page.ts'
 import { SKILL_NAME, kebabOf, parseFrontmatter, rewriteFrontmatter } from './skill-md.ts'
 import { bundledContent, bundledNames, listBundled, registerBundledSkills, setBundledEnabled } from './skills-bundled.ts'
@@ -105,33 +107,45 @@ async function dispatch(
   const route = `${method} ${sub}`
   switch (route) {
     case 'GET /installed':
-      return sendJson(res, 200, await listInstalled())
+      sendJson(res, 200, await listInstalled())
+      return
     case 'GET /market/categories':
-      return sendJson(res, 200, await gatewayGet(`${MARKET_BASE}/api/skills/categories`))
+      sendJson(res, 200, await gatewayGet(`${MARKET_BASE}/api/skills/categories`))
+      return
     case 'GET /market/list':
-      return sendJson(res, 200, await gatewayGet(`${MARKET_BASE}/api/skills/list?${new URLSearchParams({
+      sendJson(res, 200, await gatewayGet(`${MARKET_BASE}/api/skills/list?${new URLSearchParams({
         category: params.get('category') ?? 'all',
         page: params.get('page') ?? '1',
         page_size: params.get('page_size') ?? '100',
       })}`))
+      return
     case 'GET /market/detail':
-      return sendJson(res, 200, await gatewayGet(`${MARKET_BASE}/api/skills/detail?${new URLSearchParams({ ids: params.get('ids') ?? '' })}`))
+      sendJson(res, 200, await gatewayGet(`${MARKET_BASE}/api/skills/detail?${new URLSearchParams({ ids: params.get('ids') ?? '' })}`))
+      return
     case 'GET /recommended/categories':
-      return sendJson(res, 200, await gatewayGet(`${RECOMMENDED_BASE}/uniclaw/skill-categories`))
+      sendJson(res, 200, await gatewayGet(`${RECOMMENDED_BASE}/uniclaw/skill-categories`))
+      return
     case 'GET /recommended/list':
-      return sendJson(res, 200, await gatewayGet(`${RECOMMENDED_BASE}/uniclaw/recommended-skills`))
+      sendJson(res, 200, await gatewayGet(`${RECOMMENDED_BASE}/uniclaw/recommended-skills`))
+      return
     case 'POST /market/install':
-      return sendJson(res, 200, await marketInstall(await readJson(req)))
+      sendJson(res, 200, await marketInstall(await readJson(req)))
+      return
     case 'POST /recommended/install':
-      return sendJson(res, 200, await recommendedInstall(await readJson(req)))
+      sendJson(res, 200, await recommendedInstall(await readJson(req)))
+      return
     case 'POST /upload':
-      return sendJson(res, 200, await uploadInstall(params.get('filename') ?? '', await readBody(req, MAX_PACKAGE_BYTES)))
+      sendJson(res, 200, await uploadInstall(params.get('filename') ?? '', await readBody(req, MAX_PACKAGE_BYTES)))
+      return
     case 'POST /toggle':
-      return sendJson(res, 200, await toggleSkill(await readJson(req)))
+      sendJson(res, 200, await toggleSkill(await readJson(req)))
+      return
     case 'POST /delete':
-      return sendJson(res, 200, await deleteSkill(await readJson(req)))
+      sendJson(res, 200, await deleteSkill(await readJson(req)))
+      return
     case 'GET /content':
-      return sendJson(res, 200, await skillContent(params.get('name') ?? ''))
+      sendJson(res, 200, await skillContent(params.get('name') ?? ''))
+      return
     default:
       throw new HttpError(404, `unknown skills endpoint: ${route}`)
   }
@@ -240,8 +254,8 @@ async function deleteSkill(body: Record<string, unknown>): Promise<{ name: strin
   }
   const meta = await readMeta()
   if (dir in meta) {
-    delete meta[dir]
-    await writeMeta(meta)
+    const { [dir]: _removed, ...rest } = meta
+    await writeMeta(rest)
   }
   return { name: dir }
 }
@@ -300,7 +314,7 @@ async function recommendedInstall(body: Record<string, unknown>): Promise<{ name
 
   const payload = await gatewayGet(`${RECOMMENDED_BASE}/uniclaw/recommended-skills`)
   const items = recommendedItems(payload)
-  const skill = items.find(item => String(item.id ?? '') === id)
+  const skill = items.find(item => stringOf(item.id) === id)
   if (skill === undefined) throw new HttpError(404, 'recommended skill not found')
 
   // Accept only the service's own package path for this id — never an
@@ -489,7 +503,7 @@ function normalizeEntryPath(raw: string): string | undefined {
   const segments = unified.split('/').filter(s => s !== '' && s !== '.')
   if (segments.length === 0) return undefined
   if (segments.some(s => s === '..')) return undefined
-  if (/^[a-zA-Z]:/.test(segments[0]!)) return undefined
+  if (/^[a-zA-Z]:/.test(segments[0] ?? '')) return undefined
   if (segments[0] === '__MACOSX') return undefined
   if (segments.at(-1) === '.DS_Store') return undefined
   return segments.join('/')
@@ -497,9 +511,9 @@ function normalizeEntryPath(raw: string): string | undefined {
 
 /** When every entry lives under one top-level directory, strip that prefix. */
 function stripCommonRoot(entries: ZipEntry[]): ZipEntry[] {
-  const tops = new Set(entries.map(e => e.path.split('/')[0]!))
-  if (tops.size !== 1) return entries
-  const top = [...tops][0]!
+  const tops = new Set(entries.map(e => e.path.split('/')[0] ?? ''))
+  const [top] = [...tops]
+  if (tops.size !== 1 || top === undefined) return entries
   if (!entries.every(e => e.path.includes('/'))) return entries // top is itself a file
   return entries.map(e => ({ path: e.path.slice(top.length + 1), data: e.data }))
     .filter(e => e.path !== '')
@@ -547,7 +561,7 @@ async function gatewayGet(url: string): Promise<unknown> {
     const envelope = payload as { code?: unknown; msg?: unknown; data?: unknown }
     if ('code' in envelope || ('msg' in envelope && 'data' in envelope)) {
       if (envelope.code !== 0 && envelope.code !== null && envelope.code !== undefined) {
-        throw new HttpError(502, String(envelope.msg ?? 'skill service error'))
+        throw new HttpError(502, stringOf(envelope.msg) || 'skill service error')
       }
       return envelope.data
     }

@@ -18,11 +18,6 @@
  * Custom servers persist in `<dshHome>/uniclaw-mcp.json` next to the builtin
  * enable overrides; edits remount only the touched server (the mount manager
  * reconciles against a config signature).
- *
- * The mcp-client module is imported by source path relative to this file
- * (the plugin mounts by absolute path outside every node_modules resolution
- * domain, so bare workspace specifiers do not resolve here; the bridge's own
- * dependencies resolve from its package directory).
  */
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -30,6 +25,8 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+// Type-only: merges `webServer` into Context.
+import type {} from '@deepseek-ai/dsh-host-webserver'
 
 /** mcp-client serverName grammar (its SERVER_NAME_PATTERN). */
 const SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/
@@ -122,7 +119,7 @@ async function readState(): Promise<McpState> {
         : {}
       const custom = Array.isArray(raw.custom)
         ? raw.custom.filter((e): e is CustomMcpEntry =>
-            typeof e === 'object' && e !== null
+          typeof e === 'object' && e !== null
             && typeof (e as CustomMcpEntry).id === 'string'
             && typeof (e as CustomMcpEntry).serverName === 'string')
         : []
@@ -163,11 +160,22 @@ let currentKey = ''
 /** Serializes syncs so login, my-plan refresh, and edits never interleave. */
 let syncChain: Promise<void> = Promise.resolve()
 
-let mcpClientModule: Promise<Record<string, unknown>> | undefined
+type McpClientModule = typeof import('@deepseek-ai/dsh-mcp-client')
 
-/** Import the stock mcp-client bridge from its workspace source, once. */
-function loadMcpClient(): Promise<Record<string, unknown>> {
-  mcpClientModule ??= import(new URL('../../packages/mcp/mcp-client/src/index.ts', import.meta.url).href)
+/**
+ * What this module writes for one server. Only the identifying fields are set;
+ * `toolCallTimeoutMs`, `failOnStartupError`, `cwd`, `env` and `reconnect` are
+ * left to the bridge's own schema defaults, which `mountOne` applies by running
+ * `Config` over this value — a malformed entry fails at its mount rather than
+ * inside the bridge.
+ */
+type McpConfigInput = Partial<NonNullable<Parameters<McpClientModule['Config']>[0]>>
+
+let mcpClientModule: Promise<McpClientModule> | undefined
+
+/** Import the stock mcp-client bridge once; every mount reuses the module. */
+function loadMcpClient(): Promise<McpClientModule> {
+  mcpClientModule ??= import('@deepseek-ai/dsh-mcp-client')
   return mcpClientModule
 }
 
@@ -175,13 +183,13 @@ function loadMcpClient(): Promise<Record<string, unknown>> {
 interface DesiredMount {
   id: string
   serverName: string
-  config: Record<string, unknown> | undefined
+  config: McpConfigInput | undefined
 }
 
 function builtinDesired(def: BuiltinMcpDef, state: McpState, appToken: string): DesiredMount {
   const enabled = state.overrides[def.id] ?? def.defaultEnabled
   const want = enabled && (!def.needsKey || appToken !== '')
-  const config = !want ? undefined
+  const config: McpConfigInput | undefined = !want ? undefined
     : def.transport === 'streamable-http'
       ? { transport: 'streamable-http', serverName: def.serverName, url: injectKey(def.url ?? '', def.needsKey ? appToken : '') }
       : { transport: 'stdio', serverName: def.serverName, command: def.command ?? '', args: def.args ?? [] }
@@ -191,16 +199,16 @@ function builtinDesired(def: BuiltinMcpDef, state: McpState, appToken: string): 
 function customDesired(entry: CustomMcpEntry): DesiredMount {
   const valid = SERVER_NAME.test(entry.serverName)
     && (entry.transport === 'streamable-http' ? entry.url.trim() !== '' : entry.command.trim() !== '')
-  const config = !entry.enabled || !valid ? undefined
+  const config: McpConfigInput | undefined = !entry.enabled || !valid ? undefined
     : entry.transport === 'streamable-http'
       ? { transport: 'streamable-http', serverName: entry.serverName, url: entry.url.trim(), headers: entry.headers }
       : {
-          transport: 'stdio',
-          serverName: entry.serverName,
-          command: entry.command.trim(),
-          args: entry.args.split(/\s+/).filter(Boolean),
-          env: entry.env,
-        }
+        transport: 'stdio',
+        serverName: entry.serverName,
+        command: entry.command.trim(),
+        args: entry.args.split(/\s+/).filter(Boolean),
+        env: entry.env,
+      }
   return { id: entry.id, serverName: entry.serverName, config }
 }
 
@@ -215,7 +223,7 @@ function customDesired(entry: CustomMcpEntry): DesiredMount {
 export function requestMcpSync(ctx: Context, appToken: string): void {
   syncChain = syncChain
     .then(() => syncOnce(ctx, appToken))
-    .catch((error) => { console.warn('[uniclaw-shell] MCP sync failed:', error) })
+    .catch((error: unknown) => { console.warn('[uniclaw-shell] MCP sync failed:', error) })
 }
 
 /** Settles when every queued reconciliation has finished (mounts awaited). */
@@ -262,7 +270,10 @@ async function syncOnce(ctx: Context, appToken: string): Promise<void> {
 async function mountOne(ctx: Context, item: DesiredMount, sig: string): Promise<void> {
   try {
     const module = await loadMcpClient()
-    const fiber = ctx.plugin(module, item.config) as unknown as McpFiber & PromiseLike<unknown>
+    // Validated boundary: the schema fills the defaults this module omits and
+    // rejects anything malformed, so the write-surface cast resolves here.
+    const config = module.Config(item.config as Parameters<McpClientModule['Config']>[0])
+    const fiber = ctx.plugin(module, config) as unknown as McpFiber & PromiseLike<unknown>
     mounts.set(item.id, { fiber, sig })
     await fiber
     console.log(`[uniclaw-shell] MCP mounted: ${item.serverName}`)
@@ -333,7 +344,8 @@ async function dispatch(ctx: Context, route: string, req: IncomingMessage, res: 
           env: entry.env,
         })),
       ]
-      return sendJson(res, 200, { servers })
+      sendJson(res, 200, { servers })
+      return
     }
     case 'POST /toggle': {
       const body = await readJson(req)
@@ -344,48 +356,54 @@ async function dispatch(ctx: Context, route: string, req: IncomingMessage, res: 
         state.overrides[id] = enabled
       } else {
         const entry = state.custom.find(e => e.id === id)
-        if (entry === undefined) return sendJson(res, 404, { detail: `unknown MCP server: ${id}` })
+        if (entry === undefined) { sendJson(res, 404, { detail: `unknown MCP server: ${id}` }); return }
         entry.enabled = enabled
       }
       await writeState(state)
       requestMcpSync(ctx, currentKey)
-      return sendJson(res, 200, { id, enabled })
+      sendJson(res, 200, { id, enabled })
+      return
     }
     case 'POST /save': {
       const body = await readJson(req)
       const entry = normalizeCustomEntry(body)
-      if (typeof entry === 'string') return sendJson(res, 400, { detail: entry })
+      if (typeof entry === 'string') { sendJson(res, 400, { detail: entry }); return }
       const state = await readState()
       const takenNames = new Set([
         ...BUILTIN_MCPS.map(d => d.serverName),
         ...state.custom.filter(e => e.id !== entry.id).map(e => e.serverName),
       ])
       if (takenNames.has(entry.serverName)) {
-        return sendJson(res, 409, { detail: `名称「${entry.serverName}」已被占用` })
+        sendJson(res, 409, { detail: `名称「${entry.serverName}」已被占用` })
+        return
       }
       const index = state.custom.findIndex(e => e.id === entry.id)
       if (index >= 0) state.custom[index] = entry
       else state.custom.push(entry)
       await writeState(state)
       requestMcpSync(ctx, currentKey)
-      return sendJson(res, 200, { id: entry.id })
+      sendJson(res, 200, { id: entry.id })
+      return
     }
     case 'POST /delete': {
       const body = await readJson(req)
       const id = typeof body.id === 'string' ? body.id : ''
       if (BUILTIN_MCPS.some(def => def.id === id)) {
-        return sendJson(res, 400, { detail: '内置 MCP 不可删除，可以停用' })
+        sendJson(res, 400, { detail: '内置 MCP 不可删除，可以停用' })
+        return
       }
       const state = await readState()
       const index = state.custom.findIndex(e => e.id === id)
-      if (index < 0) return sendJson(res, 404, { detail: `unknown MCP server: ${id}` })
+      if (index < 0) { sendJson(res, 404, { detail: `unknown MCP server: ${id}` }); return }
       state.custom.splice(index, 1)
       await writeState(state)
       requestMcpSync(ctx, currentKey)
-      return sendJson(res, 200, { id })
+      sendJson(res, 200, { id })
+      return
     }
     default:
-      return sendJson(res, 404, { detail: `unknown mcp endpoint: ${route}` })
+      sendJson(res, 404, { detail: `unknown mcp endpoint: ${route}` })
+      return
   }
 }
 
