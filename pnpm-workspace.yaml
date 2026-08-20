@@ -27,6 +27,7 @@ linkWorkspacePackages: true
 overrides:
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
+  'app-builder-lib>@electron/get': 3.1.0
 
 peerDependencyRules:
   allowedVersions:

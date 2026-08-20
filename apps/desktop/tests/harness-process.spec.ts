@@ -5,7 +5,7 @@ describe('desktop Harness launch', () => {
   it('resolves the deployed CLI and fixes the server to loopback with an ephemeral port', () => {
     const cli = runtimeCliPath('resources')
     expect(cli).toMatch(/resources[\\/]runtime[\\/]lib[\\/]bin\.js$/)
-    expect(desktopCliArgs(cli)).toEqual([cli, '--profile', 'web', '--host', '127.0.0.1', '--port', '0'])
+    expect(desktopCliArgs(cli)).toEqual(['--expose-internals', cli, '--profile', 'web', '--host', '127.0.0.1', '--port', '0'])
   })
 
   it('parses a readiness line split across chunks', () => {

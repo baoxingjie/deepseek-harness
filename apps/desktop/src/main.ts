@@ -85,6 +85,7 @@ await app.whenReady()
 try {
   await createWindow(await startHarness())
 } catch (error) {
+  console.error(error)
   await dialog.showMessageBox({
     type: 'error',
     title: 'DeepSeek Harness could not start',

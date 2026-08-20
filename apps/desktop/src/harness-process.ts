@@ -12,7 +12,7 @@ export function runtimeCliPath(resourcesPath: string): string {
 
 /** Arguments that keep the desktop server loopback-only and request a free port. */
 export function desktopCliArgs(cliPath: string): string[] {
-  return [cliPath, '--profile', 'web', '--host', '127.0.0.1', '--port', '0']
+  return ['--expose-internals', cliPath, '--profile', 'web', '--host', '127.0.0.1', '--port', '0']
 }
 
 /** Incrementally extract the Web readiness URL from arbitrarily chunked stdout. */
