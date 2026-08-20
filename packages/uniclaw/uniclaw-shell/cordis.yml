@@ -11,3 +11,5 @@
 - insert:
     - id: uniclaw-shell
       name: '@deepseek-ai/dsh-uniclaw-shell'
+    - id: ui-uniclaw
+      name: '@deepseek-ai/dsh-client-ui-uniclaw'
