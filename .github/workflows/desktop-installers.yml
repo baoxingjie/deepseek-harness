@@ -1,0 +1,53 @@
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64 installer
+            os: windows-latest
+            command: dist:win
+            artifact: Windows-x64
+          - name: macOS installers
+            os: macos-latest
+            command: dist:mac
+            artifact: macOS
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build repository
+        run: pnpm run build
+
+      - name: Build desktop artifacts
+        run: pnpm --filter @deepseek-ai/dsh-desktop run ${{ matrix.command }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-desktop-installers
+          path: apps/desktop/dist/installers/*
+          if-no-files-found: error
