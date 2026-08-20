@@ -1,0 +1,21 @@
+import { describe, expect, it } from 'vitest'
+import { desktopCliArgs, ReadinessParser, runtimeCliPath } from '../src/harness-process.ts'
+
+describe('desktop Harness launch', () => {
+  it('resolves the deployed CLI and fixes the server to loopback with an ephemeral port', () => {
+    const cli = runtimeCliPath('resources')
+    expect(cli).toMatch(/resources[\\/]runtime[\\/]lib[\\/]bin\.js$/)
+    expect(desktopCliArgs(cli)).toEqual([cli, '--profile', 'web', '--host', '127.0.0.1', '--port', '0'])
+  })
+
+  it('parses a readiness line split across chunks', () => {
+    const parser = new ReadinessParser()
+    expect(parser.push('booting\ndsh web: http://127.0.')).toBeUndefined()
+    expect(parser.push('0.1:43127\n')).toBe('http://127.0.0.1:43127')
+  })
+
+  it('does not accept non-loopback output as a navigation target', () => {
+    const parser = new ReadinessParser()
+    expect(parser.push('dsh web: http://example.com:3080\n')).toBeUndefined()
+  })
+})

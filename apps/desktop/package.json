@@ -1,0 +1,84 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Electron desktop application for DeepSeek Harness",
+  "version": "0.1.0-rc.7",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop"
+  },
+  "type": "module",
+  "main": "lib/main.js",
+  "files": [
+    "lib/*.js"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsdown",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "dist:dir": "pnpm run build && pnpm run prepare:runtime && electron-builder --dir",
+    "dist:win": "pnpm run build && pnpm run prepare:runtime && electron-builder --win nsis",
+    "dist:mac": "pnpm run build && pnpm run prepare:runtime && electron-builder --mac dmg zip",
+    "test": "pnpm --dir ../.. exec vitest run apps/desktop/tests"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "electron": "43.4.1",
+    "electron-builder": "26.15.3",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "build": {
+    "appId": "ai.deepseek.harness",
+    "productName": "DeepSeek Harness",
+    "asar": true,
+    "npmRebuild": false,
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "dist/installers"
+    },
+    "files": [
+      "lib/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/runtime",
+        "to": "runtime",
+        "filter": [
+          "**/*",
+          "!node_modules{,/**/*}"
+        ]
+      },
+      {
+        "from": "dist/runtime/node_modules",
+        "to": "runtime/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "DeepSeek-Harness-${version}-Windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "artifactName": "DeepSeek-Harness-${version}-macOS-${arch}.${ext}"
+    }
+  }
+}
