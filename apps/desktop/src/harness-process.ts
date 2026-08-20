@@ -2,17 +2,23 @@
 
 import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const READY_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)(?: \(LAN: .+\))?$/
 
 /** Resolve the deployed CLI entry beneath Electron's resources directory. */
-export function runtimeCliPath(resourcesPath: string): string {
-  return join(resourcesPath, 'runtime', 'lib', 'bin.js')
+export function runtimeCliPath(appPath: string): string {
+  return join(appPath, 'runtime-build', 'lib', 'bin.js')
 }
 
-/** Arguments that keep the desktop server loopback-only and request a free port. */
-export function desktopCliArgs(cliPath: string): string[] {
-  return ['--expose-internals', cliPath, '--profile', 'web', '--host', '127.0.0.1', '--port', '0']
+/** Resolve the module fallback hook URL packaged with the desktop main process. */
+export function runtimeResolverURL(appPath: string): string {
+  return pathToFileURL(join(appPath, 'lib', 'runtime-resolver.js')).href
+}
+
+/** Arguments that install the ASAR resolver, keep the server loopback-only, and request a free port. */
+export function desktopCliArgs(resolverURL: string, cliPath: string): string[] {
+  return ['--import', resolverURL, '--expose-internals', cliPath, '--profile', 'web', '--host', '127.0.0.1', '--port', '0']
 }
 
 /** Incrementally extract the Web readiness URL from arbitrarily chunked stdout. */

@@ -16,9 +16,11 @@ pnpm --filter @deepseek-ai/dsh-desktop run dist:mac
 
 `dist:win` produces an NSIS installer on Windows. `dist:mac` produces DMG and ZIP artifacts on macOS. Outputs are written to `apps/desktop/dist/installers/`. macOS packages must be built on macOS; code signing and notarization use electron-builder's standard environment variables when release credentials are present.
 
-The packaging step creates the ignored `runtime-build/` directory with pnpm's production deploy mode, injected workspace packages, and a hoisted dependency tree. The CLI manifest explicitly closes the assembled profile's plugin peer dependencies, including the built Web frontend. Preparation happens in a staging directory outside the workspace, replaces links that escape the deployment with package files, and runs the required spawn-helper permission repair. Electron Builder copies the result to `resources/runtime`; the generated directory must not be committed.
+The packaging step creates the ignored `runtime-build/` directory with pnpm's production deploy mode, injected workspace packages, and a hoisted dependency tree. The CLI manifest explicitly closes the assembled profile's plugin peer dependencies, including the built Web frontend. Preparation happens in a staging directory outside the workspace, replaces links that escape the deployment with package files, and runs the required spawn-helper permission repair. The generated directory must not be committed.
 
-Windows installers use NSIS store compression. This increases the installer download size but avoids spending installation time decompressing the large runtime dependency tree. Production releases should also be code-signed because real-time malware scanners can significantly delay unsigned installer creation and installation.
+Electron Builder stores the runtime in `app.asar` and leaves only native modules and executables in `app.asar.unpacked`. The child process installs a resolver hook before the CLI starts; ordinary module resolution remains first, while unresolved in-box profile plugins fall back to the runtime inside ASAR. This avoids installing tens of thousands of dependency files without changing profile-local plugin precedence. Production releases should also be code-signed because real-time malware scanners can significantly delay unsigned installer creation and installation.
+
+The assisted Windows installer offers per-user and per-machine modes; prefer per-user installation unless every account needs the app. An existing per-machine installation requires administrator permission to upgrade or remove and can make a non-elevated launch appear stalled. Automated per-user installation may pass `/currentuser /S`.
 
 ## Security and limitations
 

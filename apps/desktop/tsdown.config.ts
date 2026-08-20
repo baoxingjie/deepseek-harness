@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['lib/types/src/main.js'],
+  entry: ['lib/types/src/main.js', 'lib/types/src/runtime-resolver.js'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

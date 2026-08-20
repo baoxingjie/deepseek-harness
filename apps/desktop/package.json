@@ -43,25 +43,11 @@
     },
     "files": [
       "lib/**",
-      "package.json"
+      "package.json",
+      "runtime-build/**"
     ],
-    "compression": "store",
-    "extraResources": [
-      {
-        "from": "runtime-build",
-        "to": "runtime",
-        "filter": [
-          "**/*",
-          "!node_modules{,/**/*}"
-        ]
-      },
-      {
-        "from": "runtime-build/node_modules",
-        "to": "runtime/node_modules",
-        "filter": [
-          "**/*"
-        ]
-      }
+    "asarUnpack": [
+      "runtime-build/**/*.{node,dll,exe,dylib,so}"
     ],
     "win": {
       "target": "nsis",

@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { desktopCliArgs, ReadinessParser, runtimeCliPath } from '../src/harness-process.ts'
+import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeResolverURL } from '../src/harness-process.ts'
 
 describe('desktop Harness launch', () => {
   it('resolves the deployed CLI and fixes the server to loopback with an ephemeral port', () => {
-    const cli = runtimeCliPath('resources')
-    expect(cli).toMatch(/resources[\\/]runtime[\\/]lib[\\/]bin\.js$/)
-    expect(desktopCliArgs(cli)).toEqual(['--expose-internals', cli, '--profile', 'web', '--host', '127.0.0.1', '--port', '0'])
+    const cli = runtimeCliPath('app.asar')
+    const resolver = runtimeResolverURL('app.asar')
+    expect(cli).toMatch(/app\.asar[\\/]runtime-build[\\/]lib[\\/]bin\.js$/)
+    expect(resolver).toMatch(/^file:\/\/\/.*app\.asar\/lib\/runtime-resolver\.js$/)
+    expect(desktopCliArgs(resolver, cli)).toEqual([
+      '--import', resolver, '--expose-internals', cli, '--profile', 'web', '--host', '127.0.0.1', '--port', '0',
+    ])
   })
 
   it('parses a readiness line split across chunks', () => {

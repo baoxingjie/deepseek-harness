@@ -1,17 +1,23 @@
 /** Electron main process that owns the local Harness runtime and desktop window. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { desktopCliArgs, ReadinessParser, runtimeCliPath, stopHarness } from './harness-process.ts'
+import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeResolverURL, stopHarness } from './harness-process.ts'
 
 const STARTUP_TIMEOUT_MS = 30_000
 let harness: ChildProcess | undefined
 let quitting = false
 
 function startHarness(): Promise<string> {
-  const cliPath = runtimeCliPath(process.resourcesPath)
-  const child = spawn(process.execPath, desktopCliArgs(cliPath), {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  const appPath = app.getAppPath()
+  const cliPath = runtimeCliPath(appPath)
+  const child = spawn(process.execPath, desktopCliArgs(runtimeResolverURL(appPath), cliPath), {
+    env: {
+      ...process.env,
+      DSH_DESKTOP_RUNTIME_ANCHOR: join(appPath, 'runtime-build', 'package.json'),
+      ELECTRON_RUN_AS_NODE: '1',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   })
