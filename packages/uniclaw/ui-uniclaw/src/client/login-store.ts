@@ -11,6 +11,11 @@ import { fetchCaptcha, readStatus, sendLoginCode, smsLogin, type Captcha } from 
 /** Seconds before a texted code can be requested again. */
 const RESEND_SECONDS = 60
 
+/** Mainland mobile grammar, same as the standalone login page. */
+function phoneValid(phone: string): boolean {
+  return /^1[3-9]\d{9}$/.test(phone)
+}
+
 /** Login step snapshot. */
 export interface LoginState {
   /**
@@ -68,6 +73,8 @@ export interface LoginController {
   /** Leave the keyless notice; the session stands, models will not work. */
   acknowledgeKeyless: () => void
   /** Whether the phone number is a plausible mainland mobile number. */
+  phoneValid: (phone: string) => boolean
+  /** Whether a texted code can be requested right now. */
   canSendCode: (state: LoginState) => boolean
 }
 
@@ -160,6 +167,7 @@ export function createLoginStore(): LoginController {
       }
     },
     acknowledgeKeyless: () => { store.update((draft) => { draft.status = 'done' }) },
-    canSendCode: state => /^1\d{10}$/.test(state.phone) && state.captchaCode.trim() !== '' && state.countdown === 0,
+    phoneValid,
+    canSendCode: state => phoneValid(state.phone) && state.captchaCode.trim() !== '' && state.countdown === 0,
   }
 }

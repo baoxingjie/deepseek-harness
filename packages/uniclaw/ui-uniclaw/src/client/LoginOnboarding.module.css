@@ -1,30 +1,91 @@
+/*
+ * Ported from the standalone /uniclaw page, which in turn reproduces
+ * UniClaw's own LoginPage.css: composite input groups (a `+86` addon, the
+ * captcha image, and the resend button all sit INSIDE one field border), a
+ * bare logo header with no title text, and a full-width primary button.
+ * Surfaces and text use the app's theme tokens so the gate follows the
+ * workbench's light/dark setting instead of the OS preference.
+ */
+
+/*
+ * UniClaw's own accent, kept as literals: this is a UniClaw-branded gate, and
+ * the workbench's --dsw-alias-brand-primary is DeepSeek's near-black, which
+ * would repaint the product's blue login button.
+ */
+.card {
+  --uniclaw-accent: #2563eb;
+  --uniclaw-accent-hover: #1d4ed8;
+  --uniclaw-accent-disabled: #93c5fd;
+  --uniclaw-accent-wash: #eff6ff;
+}
+
 /* The onboarding stage is a stretch flex container, so the card centers itself. */
 .card {
   align-self: center; margin: auto 0;
-  background: var(--dsw-alias-bg-layer-2); border-radius: 16px; padding: 32px;
-  width: min(400px, 90vw); box-shadow: var(--dsw-shadow-lv3);
-  display: flex; flex-direction: column; gap: 18px;
+  width: 100%; max-width: 400px; padding: 40px 32px;
+  animation: fadeInUp 0.6s ease-out;
 }
-.brand { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-/* A 2.37:1 wordmark: size it by height so it is not squeezed into a square. */
-.logo { height: 30px; width: auto; object-fit: contain; }
-.title { font-size: 18px; font-weight: 600; color: var(--dsw-alias-label-primary); }
-.subtitle { font-size: 13px; color: var(--dsw-alias-label-secondary); text-align: center; line-height: 1.6; }
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
-.form { display: flex; flex-direction: column; gap: 12px; }
-.row { display: flex; gap: 8px; align-items: center; }
-.row > *:first-child { flex: 1; min-width: 0; }
-.row > button { flex-shrink: 0; white-space: nowrap; }
+.header { display: flex; align-items: center; justify-content: center; margin-bottom: 24px; }
+.logo { max-width: 100%; height: auto; object-fit: contain; }
 
-.captchaBox {
-  width: 108px; height: 38px; flex-shrink: 0; cursor: pointer; overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px;
+.status { text-align: center; font-size: 13px; color: var(--dsw-alias-label-secondary); margin-bottom: 20px; line-height: 1.6; }
+
+.field { margin-bottom: 16px; }
+.group {
+  display: flex; align-items: stretch;
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.group:focus-within {
+  border-color: var(--uniclaw-accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.addon {
+  display: flex; align-items: center; padding: 0 12px;
+  font-size: 14px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1);
+  border-right: 1px solid var(--dsw-alias-border-l2); white-space: nowrap; user-select: none;
+}
+.input {
+  flex: 1; border: none; outline: none; padding: 10px 12px;
+  font-size: 14px; color: var(--dsw-alias-label-primary); background: transparent; min-width: 0;
+}
+.input::placeholder { color: var(--dsw-alias-label-tertiary); }
+
+.captcha {
   display: flex; align-items: center; justify-content: center;
-  background: var(--dsw-alias-bg-layer-1);
+  width: 80px; min-height: 40px; background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer; border-left: 1px solid var(--dsw-alias-border-l2); flex-shrink: 0;
 }
-.captchaBox img { width: 100%; height: 100%; object-fit: contain; }
-.captchaHint { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.captcha img { width: 100%; height: 100%; object-fit: contain; }
+.captchaLoading { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 
-.error { font-size: 12.5px; color: var(--dsw-alias-state-error-primary); line-height: 1.5; }
-.foot { font-size: 12px; color: var(--dsw-alias-label-tertiary); text-align: center; line-height: 1.6; }
-.actions { display: flex; flex-direction: column; gap: 8px; }
+.sendBtn {
+  flex-shrink: 0; width: 112px; border: none; border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2); color: var(--uniclaw-accent);
+  font-size: 13px; cursor: pointer; padding: 0 8px; white-space: nowrap;
+}
+.sendBtn:hover:not(:disabled) { background: var(--uniclaw-accent-wash); }
+.sendBtn:disabled { color: var(--dsw-alias-label-tertiary); cursor: not-allowed; }
+
+.error { color: var(--dsw-alias-state-error-primary); font-size: 14px; text-align: center; margin-bottom: 12px; line-height: 1.5; }
+
+.submit {
+  width: 100%; height: 44px; border: none; border-radius: 6px;
+  background: var(--uniclaw-accent); color: #fff;
+  font-size: 16px; font-weight: 500; cursor: pointer; transition: background 0.2s;
+}
+.submit:hover:not(:disabled) { background: var(--uniclaw-accent-hover); }
+.submit:disabled { background: var(--uniclaw-accent-disabled); cursor: not-allowed; }
+
+.actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.secondary {
+  width: 100%; height: 40px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px;
+  background: transparent; color: var(--dsw-alias-label-primary); font-size: 14px; cursor: pointer;
+}
+.secondary:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.noticeTitle { font-size: 16px; font-weight: 600; color: var(--dsw-alias-label-primary); text-align: center; margin-bottom: 10px; }

@@ -262,3 +262,11 @@ export async function smsLogin(phone: string, smsCode: string): Promise<{ hasKey
     '/api/uniclaw/login/smsLogin', json({ phone, smsCode })), '登录失败')
   return { hasKey: typeof data.app_token === 'string' && data.app_token.startsWith('sk-') }
 }
+
+/**
+ * Clear the stored session. The host also empties the model catalog and
+ * unmounts the key-bearing MCP servers, since both are only usable with the
+ * credentials this drops.
+ */
+export const logout = (): Promise<unknown> =>
+  call('/api/uniclaw/logout', { method: 'POST' })

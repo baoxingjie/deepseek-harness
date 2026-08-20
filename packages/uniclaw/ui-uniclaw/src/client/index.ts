@@ -15,12 +15,17 @@ import { createMcpStore } from './mcp-store.ts'
 import { SkillsSection } from './SkillsSection.tsx'
 import type { SkillsSectionInjected } from './SkillsSection.tsx'
 import { createSkillsStore } from './skills-store.ts'
+import { AccountSection } from './AccountSection.tsx'
+import type { AccountSectionInjected } from './AccountSection.tsx'
+import { createAccountStore } from './account-store.ts'
 import { LoginOnboarding } from './LoginOnboarding.tsx'
 import type { LoginOnboardingInjected } from './LoginOnboarding.tsx'
 import { createLoginStore } from './login-store.ts'
 
 export type { McpSectionProps, McpSectionInjected } from './McpSection.tsx'
 export type { SkillsSectionProps, SkillsSectionInjected } from './SkillsSection.tsx'
+export type { AccountSectionProps, AccountSectionInjected } from './AccountSection.tsx'
+export type { AccountController, AccountState } from './account-store.ts'
 export type { LoginOnboardingProps, LoginOnboardingInjected } from './LoginOnboarding.tsx'
 export type { McpController, McpState } from './mcp-store.ts'
 export type { SkillsController, SkillsState } from './skills-store.ts'
@@ -51,12 +56,27 @@ export function apply(ctx: ClientContext): void {
     controller: skills,
     useSnapshot: bindSnapshotSelector(skills.store),
   })
+  // Logging out puts the login gate back by reloading: the gate is an
+  // onboarding step that already completed, and the coordinator does not
+  // re-run a completed step.
+  const account = createAccountStore(() => { window.location.reload() })
+  const accountInjected = (): AccountSectionInjected => ({
+    controller: account,
+    useSnapshot: bindSnapshotSelector(account.store),
+  })
   const mcp = createMcpStore()
   const mcpInjected = (): McpSectionInjected => ({
     controller: mcp,
     useSnapshot: bindSnapshotSelector(mcp.store),
   })
 
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'uniclaw-account',
+    order: 59,
+    label: () => '账号',
+    inject: accountInjected,
+  }, AccountSection))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'uniclaw-skills',

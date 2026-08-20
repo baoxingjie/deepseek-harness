@@ -158,6 +158,29 @@ export function apply(ctx: Context) {
     },
   })
 
+  // ── Logout ──
+
+  ctx.webServer.register({
+    kind: 'exact',
+    path: '/api/uniclaw/logout',
+    handler: async (_req, res) => {
+      // Order matters: drop the credentials first so nothing re-reads them,
+      // then take down what they authorized. The model catalog goes too —
+      // its routes name UNICLAW_APP_TOKEN, so leaving them would offer models
+      // whose every request 401s.
+      await Promise.all([ctx.credentials.unset(JWT_REF), ctx.credentials.unset(APP_TOKEN_REF)])
+      lastPlan = undefined
+      lastMaterialized = undefined
+      // `replace`, not `update`: update merges, so an empty `providers` patch
+      // would leave every materialized route in place.
+      await ctx.settings.replace(LLM_NS, {})
+      // Unmounts the key-bearing servers; key-free ones stay up.
+      requestMcpSync(ctx, '')
+      console.log('[uniclaw-shell] logged out — credentials cleared, model catalog emptied')
+      sendJson(res, 200, { loggedIn: false })
+    },
+  })
+
   // ── Status (login page + debugging) ──
 
   ctx.webServer.register({
