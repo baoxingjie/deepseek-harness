@@ -18,7 +18,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsdown",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
-    "dist:dir": "pnpm run build && pnpm run prepare:runtime && electron-builder --dir",
+    "dist:dir": "pnpm run build && pnpm run prepare:runtime && electron-builder --dir -c.mac.identity=null",
     "dist:win": "pnpm run build && pnpm run prepare:runtime && electron-builder --win nsis",
     "dist:mac": "pnpm run build && pnpm run prepare:runtime && electron-builder --mac dmg zip",
     "test": "pnpm --dir ../.. exec vitest run apps/desktop/tests"

@@ -4,6 +4,16 @@ English | [中文](README.zh.md)
 
 The desktop app packages the existing Web GUI and Harness runtime as an Electron application. It starts `dsh --profile web` on loopback with an OS-assigned port, waits for the launcher's readiness line, and opens that URL in a sandboxed renderer. Closing the application asks the Harness process to dispose its plugin tree before forcing termination after a bounded grace period.
 
+The window opens on a local loading page immediately and swaps to the served address once the runtime answers, so a slow start never looks like a failed launch. A single instance lock keeps one runtime per user: a second launch, or activating the app from the dock, raises the existing window instead of binding another port.
+
+## Bundled UniClaw plugins
+
+The runtime deploys this package's production closure rather than the CLI's, which is how the UniClaw host and browser halves reach an installed machine: they are ordinary dependencies here, so the bundled skills and the browser plugin bundle ship inside the archive. `config/uniclaw.cordis.yml` travels with the app and is passed as `--patch`, mounting both entries by bare name. A packaged profile directory holds no `node_modules`, so ESM resolution falls back through the resolver hook and CommonJS metadata lookups fall back through `NODE_PATH`, both landing in the archived runtime.
+
+## Harness data directory
+
+The app uses the same `DSH_HOME` as the `dsh` CLI (`~/.dsh` unless the environment overrides it), so one login, skill set, MCP roster, and session history serve both. Running the CLI's own `dsh web` at the same time as the desktop app points two servers at that one directory; the single instance lock covers only a second desktop launch, so prefer one at a time.
+
 ## Build installers
 
 Build all repository artifacts first, then run the installer command on the target operating system:
@@ -14,7 +24,7 @@ pnpm --filter @deepseek-ai/dsh-desktop run dist:win
 pnpm --filter @deepseek-ai/dsh-desktop run dist:mac
 ```
 
-`dist:win` produces an NSIS installer on Windows. `dist:mac` produces DMG and ZIP artifacts on macOS. Outputs are written to `apps/desktop/dist/installers/`. macOS packages must be built on macOS; code signing and notarization use electron-builder's standard environment variables when release credentials are present.
+`dist:dir` builds an unpacked application directory for local inspection and skips macOS signing, which otherwise adds minutes to every run over a runtime of this size. `dist:win` produces an NSIS installer on Windows. `dist:mac` produces DMG and ZIP artifacts on macOS. Outputs are written to `apps/desktop/dist/installers/`. macOS packages must be built on macOS; code signing and notarization use electron-builder's standard environment variables when release credentials are present.
 
 The packaging step creates the ignored `runtime-build/` directory with pnpm's production deploy mode, injected workspace packages, and a hoisted dependency tree. The CLI manifest explicitly closes the assembled profile's plugin peer dependencies, including the built Web frontend. Preparation happens in a staging directory outside the workspace, replaces links that escape the deployment with package files, and runs the required spawn-helper permission repair. The generated directory must not be committed.
 

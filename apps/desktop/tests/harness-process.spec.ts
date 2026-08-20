@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { delimiter } from 'node:path'
-import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, uniclawPatchPath } from '../src/harness-process.ts'
+import { desktopCliArgs, loadingPagePath, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, uniclawPatchPath } from '../src/harness-process.ts'
 
 describe('desktop Harness launch', () => {
   it('resolves the deployed CLI and fixes the server to loopback with an ephemeral port', () => {
@@ -12,6 +12,7 @@ describe('desktop Harness launch', () => {
     expect(runtimeNodePath('app.asar', 'inherited')).toMatch(new RegExp(`node_modules\\${delimiter}inherited$`))
     const patch = uniclawPatchPath('app.asar')
     expect(patch).toMatch(/app\.asar[\\/]config[\\/]uniclaw\.cordis\.yml$/)
+    expect(loadingPagePath('app.asar')).toMatch(/app\.asar[\\/]config[\\/]loading\.html$/)
     expect(desktopCliArgs(resolver, cli, patch)).toEqual([
       '--import', resolver, '--expose-internals', cli,
       '--profile', 'web', '--patch', patch,

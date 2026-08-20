@@ -37,6 +37,11 @@ export function uniclawPatchPath(appPath: string): string {
   return join(appPath, 'config', 'uniclaw.cordis.yml')
 }
 
+/** Absolute path of the page shown while the runtime starts. */
+export function loadingPagePath(appPath: string): string {
+  return join(appPath, 'config', 'loading.html')
+}
+
 /**
  * Arguments that install the ASAR resolver, mount the UniClaw overlay, keep
  * the server loopback-only, and request a free port.

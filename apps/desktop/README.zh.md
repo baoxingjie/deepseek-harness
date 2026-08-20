@@ -4,6 +4,16 @@
 
 桌面应用把现有 Web GUI 和 Harness 运行时打包为 Electron 应用。它会在回环地址上以操作系统分配的端口启动 `dsh --profile web`，等待启动器输出就绪信息，然后在沙箱化渲染器中打开该地址。关闭应用时，桌面主进程会先要求 Harness 进程释放插件树；超过限定宽限期后才会强制终止。
 
+窗口会立即打开一个本地加载页，运行时应答后再切到服务地址，因此启动较慢时不会看起来像启动失败。单实例锁保证每个用户只有一个运行时：再次启动、或从程序坞激活应用，都只会唤起已有窗口，而不会再占一个端口。
+
+## 内置 UniClaw 插件
+
+运行时部署的是本包的生产依赖闭包，而不是 CLI 的 —— UniClaw 的宿主与浏览器两半以普通依赖的身份进入装机环境，内置技能与浏览器插件 bundle 一并打进归档。`config/uniclaw.cordis.yml` 随应用分发，启动时作为 `--patch` 传入，按裸名挂载两个条目。装机后的 profile 目录没有 `node_modules`，ESM 侧经解析钩子回落、CommonJS 元数据查找经 `NODE_PATH` 回落，两条路径都落到归档内的运行时。
+
+## Harness 数据目录
+
+应用与 `dsh` 命令行共用同一个 `DSH_HOME`（未被环境覆盖时为 `~/.dsh`），因此登录态、技能、MCP 配置与会话历史两边通用。若在桌面应用运行期间再用命令行启动 `dsh web`，会有两个服务同时指向该目录；单实例锁只覆盖第二次启动桌面应用，因此建议同一时间只用其中一个。
+
 ## 构建安装包
 
 先构建仓库中的全部产物，再在目标操作系统上运行对应命令：
@@ -14,7 +24,7 @@ pnpm --filter @deepseek-ai/dsh-desktop run dist:win
 pnpm --filter @deepseek-ai/dsh-desktop run dist:mac
 ```
 
-`dist:win` 在 Windows 上生成 NSIS 安装程序；`dist:mac` 在 macOS 上生成 DMG 和 ZIP。产物写入 `apps/desktop/dist/installers/`。macOS 安装包必须在 macOS 上构建；发布环境提供签名凭据时，代码签名和公证使用 electron-builder 的标准环境变量。
+`dist:dir` 生成未打包的应用目录供本地查看，并跳过 macOS 签名 —— 以这个运行时的体量，签名会给每次构建平添数分钟。`dist:win` 在 Windows 上生成 NSIS 安装程序；`dist:mac` 在 macOS 上生成 DMG 和 ZIP。产物写入 `apps/desktop/dist/installers/`。macOS 安装包必须在 macOS 上构建；发布环境提供签名凭据时，代码签名和公证使用 electron-builder 的标准环境变量。
 
 打包步骤使用 pnpm 的 production deploy 模式、注入的 workspace 包和 hoisted 依赖树创建被忽略的 `runtime-build/` 目录。CLI manifest 显式闭合了组装后 profile 的插件 peer 依赖，包括构建后的 Web 前端。准备过程在 workspace 外的暂存目录中执行，把指向部署目录外的链接替换为包文件，并执行必要的 spawn-helper 权限修复。该生成目录不得提交。
 

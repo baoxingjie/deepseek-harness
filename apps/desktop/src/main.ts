@@ -3,11 +3,20 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, stopHarness, uniclawPatchPath } from './harness-process.ts'
+import { desktopCliArgs, loadingPagePath, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, stopHarness, uniclawPatchPath } from './harness-process.ts'
 
 const STARTUP_TIMEOUT_MS = 30_000
 let harness: ChildProcess | undefined
 let quitting = false
+let mainWindow: BrowserWindow | undefined
+
+/** Raise the existing window, restoring it when minimized. */
+function focusWindow(): void {
+  if (mainWindow === undefined || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
 
 function startHarness(): Promise<string> {
   const appPath = app.getAppPath()
@@ -55,7 +64,12 @@ function startHarness(): Promise<string> {
   })
 }
 
-async function createWindow(url: string): Promise<void> {
+/**
+ * Open the window on the local loading page. The runtime takes a moment to
+ * come up, and an app that shows nothing until then reads as a failed launch.
+ * @returns the window, already visible.
+ */
+async function openLoadingWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -69,7 +83,19 @@ async function createWindow(url: string): Promise<void> {
       sandbox: true,
     },
   })
+  mainWindow = window
+  window.on('closed', () => { mainWindow = undefined })
   window.once('ready-to-show', () => { window.show() })
+  await window.loadFile(loadingPagePath(app.getAppPath()))
+  return window
+}
+
+/**
+ * Point the open window at the running server and confine navigation to it.
+ * @param window - the window opened by {@link openLoadingWindow}.
+ * @param url - the address the runtime announced.
+ */
+async function showHarness(window: BrowserWindow, url: string): Promise<void> {
   window.webContents.setWindowOpenHandler(({ url: target }) => {
     void shell.openExternal(target)
     return { action: 'deny' }
@@ -83,6 +109,9 @@ async function createWindow(url: string): Promise<void> {
 }
 
 app.on('window-all-closed', () => { app.quit() })
+// A second launch belongs to the running instance: one harness, one window.
+app.on('second-instance', () => { focusWindow() })
+app.on('activate', () => { focusWindow() })
 app.on('before-quit', (event) => {
   if (quitting || harness === undefined) return
   event.preventDefault()
@@ -90,17 +119,26 @@ app.on('before-quit', (event) => {
   void stopHarness(harness).finally(() => { app.quit() })
 })
 
-// Electron emits ready only after the main module finishes evaluating.
-void app.whenReady().then(async () => {
-  try {
-    await createWindow(await startHarness())
-  } catch (error) {
-    console.error(error)
-    await dialog.showMessageBox({
-      type: 'error',
-      title: 'DeepSeek Harness could not start',
-      message: error instanceof Error ? error.message : String(error),
-    })
-    app.quit()
-  }
-})
+// A second instance must not spawn a second runtime on a second port; the
+// lock has to be taken before anything else starts.
+if (app.requestSingleInstanceLock()) {
+  // Electron emits ready only after the main module finishes evaluating.
+  void app.whenReady().then(async () => {
+    let window: BrowserWindow | undefined
+    try {
+      window = await openLoadingWindow()
+      await showHarness(window, await startHarness())
+    } catch (error) {
+      console.error(error)
+      window?.destroy()
+      await dialog.showMessageBox({
+        type: 'error',
+        title: 'DeepSeek Harness could not start',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      app.quit()
+    }
+  })
+} else {
+  app.quit()
+}
