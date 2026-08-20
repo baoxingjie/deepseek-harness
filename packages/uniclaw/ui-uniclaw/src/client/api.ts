@@ -199,3 +199,66 @@ export const uploadSkill = (file: File): Promise<unknown> =>
     method: 'POST',
     body: file,
   })
+
+// ── Login ──
+
+/** Whether a stored login exists, and what plan it carries. */
+export interface UniClawStatus {
+  loggedIn: boolean
+  /** A usable `sk-` key is stored; without one every model request 401s. */
+  appTokenConfigured: boolean
+  plan: { productName?: string } | null
+}
+
+/** One captcha challenge: the image to show and the id to send back with it. */
+export interface Captcha {
+  captchaId: string
+  /** `data:` URI of the challenge image. */
+  b64s: string
+}
+
+/** The gateway's envelope; `code === 0` means success. */
+interface GatewayEnvelope<T> {
+  code?: number
+  msg?: string
+  data?: T
+}
+
+/** A gateway call that answered with a non-zero code. */
+export class GatewayError extends Error {}
+
+/** Unwrap a gateway envelope, raising {@link GatewayError} on a non-zero code. */
+function unwrap<T>(payload: GatewayEnvelope<T>, fallback: string): T {
+  if (payload.code !== 0) throw new GatewayError(payload.msg ?? fallback)
+  return payload.data as T
+}
+
+/** Read the stored login state. */
+export const readStatus = (): Promise<UniClawStatus> =>
+  call('/api/uniclaw/status')
+
+/** Fetch a fresh captcha challenge. */
+export async function fetchCaptcha(): Promise<Captcha> {
+  const payload = await call<GatewayEnvelope<Captcha>>('/api/uniclaw/login/captcha')
+  const data = payload.data
+  if (data?.b64s === undefined) throw new GatewayError(payload.msg ?? '验证码加载失败')
+  return data
+}
+
+/** Ask the gateway to text a login code to `phone`. */
+export async function sendLoginCode(phone: string, captchaCode: string, captchaId: string): Promise<void> {
+  unwrap(await call<GatewayEnvelope<unknown>>(
+    '/api/uniclaw/login/sendCode', json({ phone, captchaCode, captchaId })), '发送失败')
+}
+
+/**
+ * Exchange the SMS code for a session. The host stores the credentials,
+ * materializes the model catalog, and mounts the key-bearing MCP servers
+ * before answering.
+ * @returns whether the account also carries a usable model key.
+ */
+export async function smsLogin(phone: string, smsCode: string): Promise<{ hasKey: boolean }> {
+  const data = unwrap(await call<GatewayEnvelope<{ app_token?: string }>>(
+    '/api/uniclaw/login/smsLogin', json({ phone, smsCode })), '登录失败')
+  return { hasKey: typeof data.app_token === 'string' && data.app_token.startsWith('sk-') }
+}

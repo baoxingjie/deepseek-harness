@@ -44,11 +44,11 @@ pnpm dsh web --patch ./packages/uniclaw/uniclaw-shell/cordis.yml
 
 ## 登录与使用
 
-1. 打开 **http://127.0.0.1:3082/uniclaw** → 手机号 + 图形验证码 + 短信验证码登录
+1. 打开 **http://127.0.0.1:3082/** → 未登录时工作台前会挡一层登录卡片（手机号 + 图形验证码 + 短信验证码）。已登录则直接进工作台，登录卡片不出现
 2. 登录成功后插件自动完成：
    - 元景 sk 密钥存入 `~/.dsh/.credentials.yaml`（配置文件里只有凭据引用，不落明文）
    - my-plan 模型目录物化进 `~/.dsh/settings.yaml` 的 `llm-pi-ai` 分节（live 生效，无需重启）
-3. 回到 **http://127.0.0.1:3082/** 工作台：
+3. 进入工作台：
    - 首次使用需 **选择工作区**（添加任意项目目录），否则输入框不可用
    - 模型选择器里选 UniClaw 元景下的模型（DeepSeek V4 Flash / GLM 5.2 / Qwen3 等），直接对话
 
@@ -87,6 +87,7 @@ pnpm dsh web --patch ./packages/uniclaw/uniclaw-shell/cordis.yml
 | 模型请求 401 / `MISSING_CREDENTIAL` | 重新到 `/uniclaw` 登录一次；套餐 key 轮换后每次 my-plan 刷新会自动同步 |
 | 端口被占 | 改 `uniclaw-shell/cordis.yml` 里 `webserver` 的 `port`（默认 3082） |
 | 登录成功但提示"账号暂无可用密钥" | 该手机号没有生效的 UniClaw 套餐（无 app_token 下发），先在 UniClaw 端开通 |
+| 想换账号 / 重新登录 | 打开 `http://127.0.0.1:3082/uniclaw?stay=1`（独立登录页保留作为换号入口） |
 | 设置里看不到「技能」「MCP」两页 | `ui-uniclaw` 没装进 profile 或没构建；`cd ~/.dsh/profiles/web && pnpm add link:<repo>/packages/uniclaw/ui-uniclaw`，再 `pnpm --filter @deepseek-ai/dsh-client-ui-uniclaw run bundle` |
 | MCP 显示"待登录" | `UniAI-Toolkit` 的 URL 需要 app token，先到 `/uniclaw` 登录；登录后自动挂载 |
 | MCP 开着但"未挂载" | 看启动日志的 `MCP mount failed`：HTTP 多为地址/请求头不对或网络不通，stdio 多为本机没有该命令 |
@@ -96,6 +97,7 @@ pnpm dsh web --patch ./packages/uniclaw/uniclaw-shell/cordis.yml
 - 插件入口：[src/index.ts](src/index.ts)，Host 半侧 only（一期）。零运行时 import（`import type` only），因为它以绝对路径挂载、不在任何 node_modules 解析域内
 - 注册的路由：`/api/uniclaw/login/{captcha,sendCode,smsLogin}`、`/api/uniclaw/my-plan`、`/api/uniclaw/status`（均为元景网关代理）、`/uniclaw`（一期登录页）
 - 技能模块：[src/skills.ts](src/skills.ts)（API + 安装管线 + 内置 zip 解包）。前缀路由 `/api/uniclaw/skills`：`GET installed | market/{categories,list,detail} | recommended/{categories,list} | content?name=`，`POST market/install | recommended/install | upload?filename= | toggle | delete`。语义对齐 UniClaw 后端 `routes/skills.py`（安装幂等按市场 id、409 结构化 `skill_conflict`、推荐包 path/size/sha256 校验）
+- 登录门：[../ui-uniclaw/src/client/LoginOnboarding.tsx](../ui-uniclaw/src/client/LoginOnboarding.tsx) 注册在 `settings.onboarding`（order -200，排在产品自带引导之前——没有 UniClaw 会话就没有模型目录可配）。它自己决定显不显示：读 `/api/uniclaw/status`，已登录就 `complete()` 交棒且全程渲染 null，所以老用户看不到任何闪烁；未登录才用 `OnboardingSurface` 罩住工作台（`#root` 置 inert）。登录成功后宿主已在应答里存好凭据、物化模型目录并挂上带 key 的 MCP，前端只需交棒
 - 客户端半侧：[../ui-uniclaw/src/client/](../ui-uniclaw/src/client/)。`ctx.slots.inject('settings.section', …)` 各注册一页，模板是 `packages/client/ui-settings-models`。两页各持一个 `createSnapshotStore` 控制器，首次打开时加载；目录接口是网关裸透传，行形状在 [api.ts](../ui-uniclaw/src/client/api.ts) 归一化。客户端 bundle 的发现要求包声明 `dsh.client` 并导出 `./client`，改完要重新 `pnpm --filter @deepseek-ai/dsh-client-ui-uniclaw run bundle`
 - 技能包解包为内置最小 zip 读取器（node:zlib inflateRaw，central directory 遍历，拒绝 `..`/绝对路径/zip64），因为绝对路径挂载的插件无法引入 unzip 依赖
 - 内置技能 provider：[src/skills-bundled.ts](src/skills-bundled.ts)（`ctx.skills.registerProvider`，样板是 `dsh-skill-badge`），frontmatter 工具共享在 [src/skill-md.ts](src/skill-md.ts)。技能源拷自 UniClaw `backend/skills/public`（已剔除 `__pycache__`/`.pyc`），更新方式为重拷 + 重启
@@ -105,4 +107,4 @@ pnpm dsh web --patch ./packages/uniclaw/uniclaw-shell/cordis.yml
 - 调试：`UNICLAW_SHELL_DEBUG=1` 启动会多注册 `POST /api/uniclaw/debug/materialize`，可手喂 my-plan payload 测物化，勿在正式环境开
 - 环境变量：`UNICLAW_AUTH_BASE` / `UNICLAW_GATEWAY_BASE` / `UNICLAW_APPLICATION`（企业部署换网关用）；技能模块另有 `UNICLAW_SKILL_MARKET_BASE_URL` / `UNICLAW_RECOMMENDED_SKILLS_BASE_URL`（与 UniClaw app 同名开关）
 
-下一步：登录改成 `settings.onboarding` 页（未登录时挡在工作台前），套餐/用量单开一页；再在外面套 Electron 壳（主进程 spawn `dsh web` + 窗口加载本地地址）。
+下一步：套餐/用量单开一页；再在外面套 Electron 壳（主进程 spawn `dsh web` + 窗口加载本地地址）。
