@@ -1,6 +1,6 @@
 # uniclaw-shell
 
-DeepSeek Harness 的 UniClaw（元景网关）集成插件：短信验证码登录 + 套餐/模型目录自动配置 + 扩展-技能（推荐/技能市场/已安装）。纯插件实现，不改 harness 核心代码，通过 cordis.yml patch 覆盖层挂载。
+DeepSeek Harness 的 UniClaw（元景网关）集成插件：短信验证码登录 + 套餐/模型目录自动配置 + 扩展-技能（推荐/技能市场/已安装）+ MCP 服务器（内置/自定义）。纯插件实现，不改 harness 核心代码，通过 cordis.yml patch 覆盖层挂载。
 
 ## 环境要求
 
@@ -58,6 +58,19 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 
 注意：harness 只接受 kebab-case 技能名（`^[a-z0-9]+(-[a-z0-9]+)*$`）。安装管线会自动把不合规的 frontmatter `name` 规范化重写（中文名取拉丁片段或回退到包名/哈希），原始名字保留在安装元数据 `~/.dsh/uniclaw-skills-meta.json` 的 `displayName` 里供页面展示。
 
+## MCP 服务器
+
+技能页「已安装」页签下方是 MCP 服务器管理区，对应 UniClaw app 设置里的 MCP 面板：
+
+- **内置**（随插件分发，与 UniClaw app 打包 config.json 的 `is_builtin` 三项同源）：
+  - `UniAI-Toolkit` — 元景 UniAI 工具集，HTTP。URL 里 `key=` 为空占位，登录后由插件填入当前 app token（等同 UniClaw 后端 `inject_yuanjing_key()`）；套餐 key 轮换时 my-plan 刷新会带新 key 重新挂载。默认开
+  - `arXiv-mcp` — arXiv 论文检索，HTTP，无需 key。默认开
+  - `playwright` — 浏览器自动化，stdio（`npx @playwright/mcp@latest --isolated`）。UniClaw 用自管浏览器运行时兜底，harness 没有，首次运行要现下载，因此**默认关**，需要时自行打开
+- **自定义**：点「+ 添加 MCP 服务器」，HTTP 填地址 + 请求头，Stdio 填命令 + 参数 + 环境变量，可编辑/删除。名称即模型侧工具命名空间，须匹配 `^[A-Za-z0-9_-]{1,32}$` 且不与已有服务器重名（409）
+- 内置项可停用不可删除；开关与自定义条目落盘 `~/.dsh/uniclaw-mcp.json`（`overrides` 存内置开关，`custom` 存自定义条目）
+
+改动即时生效，无需重启：每个启用的服务器挂载一份 harness 自带的 `@deepseek-ai/dsh-mcp-client` 插件实例，其工具以 `mcp__<服务器名>__<工具名>` 注册进 `ctx.tools`，对话里模型直接可调；重连/重新同步由该桥接插件自己负责。挂载管理器按配置签名对账，只重挂被改动的那一个，删除的自动卸载。
+
 ## 常见问题
 
 | 现象 | 处理 |
@@ -67,6 +80,8 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 | 模型请求 401 / `MISSING_CREDENTIAL` | 重新到 `/uniclaw` 登录一次；套餐 key 轮换后每次 my-plan 刷新会自动同步 |
 | 端口被占 | 改 `uniclaw-shell/cordis.yml` 里 `webserver` 的 `port`（默认 3082） |
 | 登录成功但提示"账号暂无可用密钥" | 该手机号没有生效的 UniClaw 套餐（无 app_token 下发），先在 UniClaw 端开通 |
+| MCP 显示"待登录" | `UniAI-Toolkit` 的 URL 需要 app token，先到 `/uniclaw` 登录；登录后自动挂载 |
+| MCP 开着但"未挂载" | 看启动日志的 `MCP mount failed`：HTTP 多为地址/请求头不对或网络不通，stdio 多为本机没有该命令 |
 
 ## 实现说明（给开发者）
 
@@ -75,6 +90,7 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 - 技能模块：[src/skills.ts](src/skills.ts)（API + 安装管线 + 内置 zip 解包，页面在 [src/skills-page.ts](src/skills-page.ts)）。前缀路由 `/api/uniclaw/skills`：`GET installed | market/{categories,list,detail} | recommended/{categories,list} | content?name=`，`POST market/install | recommended/install | upload?filename= | toggle | delete`；页面 `/uniclaw/skills`。语义对齐 UniClaw 后端 `routes/skills.py`（安装幂等按市场 id、409 结构化 `skill_conflict`、推荐包 path/size/sha256 校验）
 - 技能包解包为内置最小 zip 读取器（node:zlib inflateRaw，central directory 遍历，拒绝 `..`/绝对路径/zip64），因为绝对路径挂载的插件无法引入 unzip 依赖
 - 内置技能 provider：[src/skills-bundled.ts](src/skills-bundled.ts)（`ctx.skills.registerProvider`，样板是 `dsh-skill-badge`），frontmatter 工具共享在 [src/skill-md.ts](src/skill-md.ts)。技能源拷自 UniClaw `backend/skills/public`（已剔除 `__pycache__`/`.pyc`），更新方式为重拷 + 重启
+- MCP 模块：[src/mcp-builtin.ts](src/mcp-builtin.ts)。内置定义对齐 UniClaw 打包 config.json 的 `is_builtin` 条目；路由 `/api/uniclaw/mcp`：`GET /`、`POST toggle|save|delete`。`requestMcpSync(ctx, appToken)` 串行对账（登录、my-plan 刷新、开关、增删改都走它），mcp-client 以相对源码路径 import（插件按绝对路径挂载，不在任何 node_modules 解析域内，bare specifier 解析不到；桥接插件自身的依赖从它的包目录正常解析）
 - 协议映射与 UniClaw 后端 `agent_manager._make_chat_model` 保持一致：`provider=yuanjing|anthropic` → `anthropic-messages`（SDK 拼 `/v1/messages`），其余 → `openai-completions`（拼 `/chat/completions`）
 - my-plan 语义与 UniClaw 相同：有效 payload 全量覆盖模型目录，无效 payload 保留本地 last-known-good；顶层 `apiKey` 每次刷新回写凭据（兑换 `updateKey` 轮换场景）
 - 调试：`UNICLAW_SHELL_DEBUG=1` 启动会多注册 `POST /api/uniclaw/debug/materialize`，可手喂 my-plan payload 测物化，勿在正式环境开

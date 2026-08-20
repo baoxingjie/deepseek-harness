@@ -122,6 +122,33 @@ export const SKILLS_PAGE_HTML = /* html */ `<!doctype html>
   }
   .modal header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); font-weight: 600; }
   .modal pre { padding: 16px 18px; overflow: auto; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+  .mcp-head { display: flex; align-items: center; justify-content: space-between; margin: 36px 0 14px; }
+  .mcp-head h2 { font-size: 17px; font-weight: 600; }
+  .mcp-row {
+    display: flex; align-items: center; gap: 14px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+  }
+  .mcp-row .info { flex: 1; min-width: 0; }
+  .mcp-row .title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .mcp-row .sub { font-size: 12px; color: var(--muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--chip); color: var(--muted); }
+  .tag.ok { color: #16a34a; }
+  .tag.warn { color: #d97706; }
+
+  .form-body { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+  .form-body label.f { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .form-body input[type=text] {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+    color: var(--text); padding: 9px 12px; font-size: 14px; outline: none;
+  }
+  .form-body input[type=text]:focus { border-color: var(--primary); }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: max-content; }
+  .seg button { border: none; background: var(--panel); color: var(--muted); padding: 8px 26px; font-size: 14px; cursor: pointer; }
+  .seg button.active { background: var(--chip); color: var(--text); font-weight: 600; }
+  .kv-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .kv-row input { flex: 1; }
+  .form-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -143,6 +170,14 @@ export const SKILLS_PAGE_HTML = /* html */ `<!doctype html>
 
   <div class="chips" id="chips"></div>
   <div class="grid" id="grid"><div class="empty">加载中…</div></div>
+
+  <div id="mcpSection" style="display:none">
+    <div class="mcp-head">
+      <h2>MCP 服务器</h2>
+      <button class="btn ghost" id="mcpAddBtn">+ 添加 MCP 服务器</button>
+    </div>
+    <div id="mcpList"></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -150,6 +185,51 @@ export const SKILLS_PAGE_HTML = /* html */ `<!doctype html>
   <div class="modal">
     <header><span id="modalTitle"></span><button class="iconbtn" id="modalClose">&#10005;</button></header>
     <pre id="modalBody"></pre>
+  </div>
+</div>
+
+<div class="modal-mask" id="mcpFormMask">
+  <div class="modal">
+    <header><span id="mcpFormTitle">添加 MCP 服务器</span><button class="iconbtn" id="mcpFormClose">&#10005;</button></header>
+    <div class="form-body">
+      <div>
+        <label class="f">类型</label>
+        <div class="seg">
+          <button type="button" id="segHttp" class="active">HTTP</button>
+          <button type="button" id="segStdio">Stdio</button>
+        </div>
+      </div>
+      <div>
+        <label class="f">名称</label>
+        <input type="text" id="mcpName" placeholder="例如 context7（字母/数字/下划线/连字符）">
+      </div>
+      <div id="httpFields">
+        <label class="f">地址</label>
+        <input type="text" id="mcpUrl" placeholder="https://example.com/mcp">
+        <div style="margin-top:14px">
+          <label class="f">请求头</label>
+          <div id="headerRows"></div>
+          <button type="button" class="btn ghost" id="addHeaderBtn" style="padding:5px 12px;font-size:13px">+ Add</button>
+        </div>
+      </div>
+      <div id="stdioFields" style="display:none">
+        <label class="f">命令</label>
+        <input type="text" id="mcpCommand" placeholder="npx">
+        <div style="margin-top:14px">
+          <label class="f">参数（空格分隔）</label>
+          <input type="text" id="mcpArgs" placeholder="-y @modelcontextprotocol/server-github">
+        </div>
+        <div style="margin-top:14px">
+          <label class="f">环境变量</label>
+          <div id="envRows"></div>
+          <button type="button" class="btn ghost" id="addEnvBtn" style="padding:5px 12px;font-size:13px">+ Add</button>
+        </div>
+      </div>
+    </div>
+    <div class="form-foot">
+      <button class="btn ghost" id="mcpFormCancel">取消</button>
+      <button class="btn" id="mcpFormSave">保存并应用</button>
+    </div>
   </div>
 </div>
 
@@ -167,6 +247,7 @@ const state = {
   market: null,        // items[]
   marketCategories: [],
   installed: [],       // InstalledSkill[]
+  mcp: null,           // MCP servers (builtin + custom)
   busy: new Set(),     // ids/names with an in-flight action
 }
 
@@ -335,6 +416,154 @@ function render() {
   else if (state.tab === 'market') grid.innerHTML = state.market === null ? '<div class="empty">加载中…</div>' : renderCatalogCards(state.market, 'market')
   else grid.innerHTML = renderInstalledCards()
   bindGridEvents()
+  $('mcpSection').style.display = state.tab === 'installed' ? '' : 'none'
+  if (state.tab === 'installed') renderMcp()
+}
+
+// ── MCP servers (builtin + custom) ──
+
+async function loadMcp() {
+  try {
+    const data = await fetch('/api/uniclaw/mcp').then(r => r.json())
+    state.mcp = (data && data.servers) || []
+  } catch (e) { state.mcp = [] }
+}
+
+function mcpStatusTag(s) {
+  if (!s.enabled) return '<span class="tag">已停用</span>'
+  if (s.requiresLogin) return '<span class="tag warn">待登录</span>'
+  if (s.mounted) return '<span class="tag ok">已挂载</span>'
+  return '<span class="tag warn">未挂载</span>'
+}
+
+function renderMcp() {
+  const list = $('mcpList')
+  if (!state.mcp) { list.innerHTML = '<div class="empty">加载中…</div>'; return }
+  let html = ''
+  for (const s of state.mcp) {
+    const busy = state.busy.has('mcp:' + s.id)
+    html += '<div class="mcp-row">'
+      + '<div class="badge" style="width:38px;height:38px;font-size:14px;background:' + badgeColor(s.name) + '">' + esc(initials(s.name)) + '</div>'
+      + '<div class="info"><div class="title">' + esc(s.name)
+      + ' <span class="tag">' + (s.transport === 'stdio' ? 'Stdio' : 'HTTP') + '</span>'
+      + (s.builtin ? ' <span class="tag">内置</span>' : '')
+      + ' ' + mcpStatusTag(s) + '</div>'
+      + '<div class="sub">' + esc(s.note || '') + '</div></div>'
+      + (s.builtin ? '' : '<button class="iconbtn mcp-edit" data-id="' + esc(s.id) + '" title="编辑">&#9998;</button>'
+        + '<button class="iconbtn mcp-del" data-id="' + esc(s.id) + '" title="删除">&#128465;</button>')
+      + '<label class="switch"><input type="checkbox" class="mcp-toggle" data-id="' + esc(s.id) + '"'
+      + (s.enabled ? ' checked' : '') + (busy ? ' disabled' : '') + '><span class="track"></span><span class="knob"></span></label>'
+      + '</div>'
+  }
+  list.innerHTML = html || '<div class="empty">暂无 MCP 服务器</div>'
+  for (const el of list.querySelectorAll('.mcp-toggle')) {
+    el.onchange = () => toggleMcp(el.dataset.id, el.checked)
+  }
+  for (const el of list.querySelectorAll('.mcp-del')) {
+    el.onclick = () => deleteMcp(el.dataset.id)
+  }
+  for (const el of list.querySelectorAll('.mcp-edit')) {
+    el.onclick = () => openMcpForm(state.mcp.find(s => s.id === el.dataset.id))
+  }
+}
+
+async function toggleMcp(id, enabled) {
+  state.busy.add('mcp:' + id)
+  try {
+    const res = await fetch('/api/uniclaw/mcp/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, enabled }) })
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || '操作失败')
+    toast(enabled ? '已启用，正在连接…' : '已停用')
+  } catch (e) { toast(e.message) }
+  finally { state.busy.delete('mcp:' + id); setTimeout(async () => { await loadMcp(); renderMcp() }, 800) }
+}
+
+async function deleteMcp(id) {
+  const s = state.mcp.find(x => x.id === id)
+  if (!confirm('确定删除 MCP 服务器「' + (s ? s.name : id) + '」吗？')) return
+  try {
+    const res = await fetch('/api/uniclaw/mcp/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || '删除失败')
+    toast('已删除')
+  } catch (e) { toast(e.message) }
+  await loadMcp(); renderMcp()
+}
+
+// ── MCP add/edit form ──
+
+let mcpFormId = ''
+let mcpFormTransport = 'streamable-http'
+
+function kvRow(container, key, value) {
+  const row = document.createElement('div')
+  row.className = 'kv-row'
+  row.innerHTML = '<input type="text" class="kv-k" placeholder="Key"><input type="text" class="kv-v" placeholder="Value">'
+    + '<button type="button" class="iconbtn" title="移除">&#10005;</button>'
+  row.querySelector('.kv-k').value = key || ''
+  row.querySelector('.kv-v').value = value || ''
+  row.querySelector('button').onclick = () => row.remove()
+  container.appendChild(row)
+}
+
+function readKvRows(container) {
+  const out = {}
+  for (const row of container.querySelectorAll('.kv-row')) {
+    const k = row.querySelector('.kv-k').value.trim()
+    const v = row.querySelector('.kv-v').value
+    if (k) out[k] = v
+  }
+  return out
+}
+
+function setMcpTransport(t) {
+  mcpFormTransport = t
+  $('segHttp').classList.toggle('active', t === 'streamable-http')
+  $('segStdio').classList.toggle('active', t === 'stdio')
+  $('httpFields').style.display = t === 'streamable-http' ? '' : 'none'
+  $('stdioFields').style.display = t === 'stdio' ? '' : 'none'
+}
+
+function openMcpForm(entry) {
+  mcpFormId = entry ? entry.id : ''
+  $('mcpFormTitle').textContent = entry ? '编辑 MCP 服务器' : '添加 MCP 服务器'
+  $('mcpName').value = entry ? entry.name : ''
+  $('mcpUrl').value = (entry && entry.url) || ''
+  $('mcpCommand').value = (entry && entry.command) || ''
+  $('mcpArgs').value = (entry && entry.args) || ''
+  $('headerRows').innerHTML = ''
+  $('envRows').innerHTML = ''
+  for (const [k, v] of Object.entries((entry && entry.headers) || {})) kvRow($('headerRows'), k, v)
+  for (const [k, v] of Object.entries((entry && entry.env) || {})) kvRow($('envRows'), k, v)
+  setMcpTransport(entry ? entry.transport : 'streamable-http')
+  $('mcpFormMask').classList.add('show')
+}
+
+$('segHttp').onclick = () => setMcpTransport('streamable-http')
+$('segStdio').onclick = () => setMcpTransport('stdio')
+$('addHeaderBtn').onclick = () => kvRow($('headerRows'))
+$('addEnvBtn').onclick = () => kvRow($('envRows'))
+$('mcpAddBtn').onclick = () => openMcpForm(null)
+$('mcpFormClose').onclick = $('mcpFormCancel').onclick = () => $('mcpFormMask').classList.remove('show')
+$('mcpFormMask').onclick = (e) => { if (e.target === $('mcpFormMask')) $('mcpFormMask').classList.remove('show') }
+
+$('mcpFormSave').onclick = async function () {
+  const payload = {
+    id: mcpFormId,
+    name: $('mcpName').value.trim(),
+    transport: mcpFormTransport,
+    url: $('mcpUrl').value.trim(),
+    headers: readKvRows($('headerRows')),
+    command: $('mcpCommand').value.trim(),
+    args: $('mcpArgs').value.trim(),
+    env: readKvRows($('envRows')),
+  }
+  try {
+    const res = await fetch('/api/uniclaw/mcp/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || '保存失败')
+    $('mcpFormMask').classList.remove('show')
+    toast('已保存，正在连接…')
+    setTimeout(async () => { await loadMcp(); renderMcp() }, 800)
+    await loadMcp(); renderMcp()
+  } catch (e) { toast(e.message) }
 }
 
 function bindGridEvents() {
@@ -447,12 +676,13 @@ for (const el of document.querySelectorAll('.tab')) {
     syncTabs()
     render()
     await ensureTabData()
+    if (state.tab === 'installed') await loadMcp()
     render()
   }
 }
 
 ;(async function boot() {
-  await loadInstalled()
+  await Promise.all([loadInstalled(), loadMcp()])
   await ensureTabData()
   render()
 })()

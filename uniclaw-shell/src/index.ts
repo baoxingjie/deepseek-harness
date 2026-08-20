@@ -21,6 +21,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { registerSkillModule } from './skills.ts'
+import { registerMcpModule, requestMcpSync } from './mcp-builtin.ts'
 
 export const name = 'uniclaw-shell'
 export const inject = ['webServer', 'settings', 'credentials', 'skills']
@@ -121,6 +122,7 @@ export function apply(ctx: Context) {
         await ctx.credentials.set(JWT_REF, payload.data.token)
         if (typeof payload.data.app_token === 'string' && payload.data.app_token.startsWith('sk-')) {
           await ctx.credentials.set(APP_TOKEN_REF, payload.data.app_token)
+          requestMcpSync(ctx, payload.data.app_token)
         } else {
           // Same boundary UniClaw warns about: no usable token on this account.
           console.warn('[uniclaw-shell] smsLogin succeeded but returned no sk- app_token; models will fail auth until one is issued')
@@ -232,6 +234,14 @@ export function apply(ctx: Context) {
   // ── 扩展-技能 module (marketplace / recommended / installed) ──
   registerSkillModule(ctx)
 
+  // ── MCP module (builtin + custom servers) ──
+  registerMcpModule(ctx)
+  // Mount MCP servers from the stored login state; UniAI-Toolkit stays
+  // unmounted until a key exists, key-free servers mount right away.
+  void ctx.credentials.resolve(APP_TOKEN_REF)
+    .then(token => requestMcpSync(ctx, token?.value ?? ''))
+    .catch(() => requestMcpSync(ctx, ''))
+
   console.log(`[uniclaw-shell] loaded — login page at /uniclaw (gateway: ${AUTH_BASE})`)
 }
 
@@ -250,6 +260,8 @@ async function refreshMyPlan(ctx: Context, jwt: string): Promise<Record<string, 
   // credential in sync, same as UniClaw's mergeUserWithMyPlan.
   if (typeof payload.apiKey === 'string' && payload.apiKey.startsWith('sk-')) {
     await ctx.credentials.set(APP_TOKEN_REF, payload.apiKey)
+    // Key rotation remounts key-bearing builtin MCP servers (UniAI-Toolkit).
+    requestMcpSync(ctx, payload.apiKey)
   }
   const summary = await materializeModels(ctx, payload)
   if (summary) lastMaterialized = { ...summary, at: new Date().toISOString() }
