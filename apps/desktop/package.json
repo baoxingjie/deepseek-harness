@@ -45,9 +45,10 @@
       "lib/**",
       "package.json"
     ],
+    "compression": "store",
     "extraResources": [
       {
-        "from": "dist/runtime",
+        "from": "runtime-build",
         "to": "runtime",
         "filter": [
           "**/*",
@@ -55,7 +56,7 @@
         ]
       },
       {
-        "from": "dist/runtime/node_modules",
+        "from": "runtime-build/node_modules",
         "to": "runtime/node_modules",
         "filter": [
           "**/*"
