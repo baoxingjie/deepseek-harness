@@ -24,6 +24,16 @@ pnpm --filter @deepseek-ai/dsh-desktop run dist:win
 pnpm --filter @deepseek-ai/dsh-desktop run dist:mac
 ```
 
+需要一个未签名的 macOS DMG（本地分发与测试，无需凭据）时改用脚本。它负责整条链路，Electron 二进制没下载成功时拒绝启动，部署出的运行时里没有 UniClaw 插件时直接报错：
+
+```sh
+apps/desktop/scripts/build-mac.sh
+apps/desktop/scripts/build-mac.sh --skip-build
+apps/desktop/scripts/build-mac.sh --skip-runtime
+```
+
+第一种形式跑完整链路。`--skip-build` 复用当前的仓库产物，`--skip-runtime` 复用当前的 `runtime-build/` 部署，用于只迭代打包这一步。
+
 `dist:dir` 生成未打包的应用目录供本地查看，并跳过 macOS 签名 —— 以这个运行时的体量，签名会给每次构建平添数分钟。`dist:win` 在 Windows 上生成 NSIS 安装程序；`dist:mac` 在 macOS 上生成 DMG 和 ZIP。产物写入 `apps/desktop/dist/installers/`。macOS 安装包必须在 macOS 上构建；发布环境提供签名凭据时，代码签名和公证使用 electron-builder 的标准环境变量。
 
 打包步骤使用 pnpm 的 production deploy 模式、注入的 workspace 包和 hoisted 依赖树创建被忽略的 `runtime-build/` 目录。CLI manifest 显式闭合了组装后 profile 的插件 peer 依赖，包括构建后的 Web 前端。准备过程在 workspace 外的暂存目录中执行，把指向部署目录外的链接替换为包文件，并执行必要的 spawn-helper 权限修复。该生成目录不得提交。

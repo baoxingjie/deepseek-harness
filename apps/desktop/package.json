@@ -21,6 +21,7 @@
     "dist:dir": "pnpm run build && pnpm run prepare:runtime && electron-builder --dir -c.mac.identity=null",
     "dist:win": "pnpm run build && pnpm run prepare:runtime && electron-builder --win nsis",
     "dist:mac": "pnpm run build && pnpm run prepare:runtime && electron-builder --mac dmg zip",
+    "dist:mac:unsigned": "bash scripts/build-mac.sh",
     "test": "pnpm --dir ../.. exec vitest run apps/desktop/tests"
   },
   "license": "MIT",
