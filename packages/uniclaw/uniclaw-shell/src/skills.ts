@@ -23,7 +23,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: merges `webServer` into Context.
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { SKILLS_PAGE_HTML } from './skills-page.ts'
 import { SKILL_NAME, kebabOf, parseFrontmatter, rewriteFrontmatter } from './skill-md.ts'
 import { bundledContent, bundledNames, listBundled, registerBundledSkills, setBundledEnabled } from './skills-bundled.ts'
 
@@ -82,17 +81,7 @@ export function registerSkillModule(ctx: Context): void {
     },
   })
 
-  ctx.webServer.register({
-    kind: 'exact',
-    path: '/uniclaw/skills',
-    handler: (_req, res) => {
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      res.end(SKILLS_PAGE_HTML)
-    },
-  })
-
-  console.log(`[uniclaw-shell] skills module loaded — page at /uniclaw/skills (market: ${MARKET_BASE})`)
+  console.log(`[uniclaw-shell] skills module loaded (market: ${MARKET_BASE})`)
 }
 
 // ── Route dispatch ──

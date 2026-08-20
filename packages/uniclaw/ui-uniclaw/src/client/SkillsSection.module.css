@@ -1,0 +1,46 @@
+.page { display: flex; flex-direction: column; gap: 14px; }
+
+.toolbar { display: flex; align-items: center; gap: 10px; }
+.toolbar > button { flex-shrink: 0; white-space: nowrap; }
+.toolbar .search { flex: 1; min-width: 0; }
+
+.tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.tab {
+  border: none; background: transparent; cursor: pointer;
+  padding: 8px 2px 10px; font-size: 14px; color: var(--dsw-alias-label-secondary);
+  border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px;
+}
+.tabActive { color: var(--dsw-alias-label-primary); font-weight: 600; border-bottom-color: var(--dsw-alias-label-primary); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.card {
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; padding: 14px;
+  display: flex; flex-direction: column; gap: 8px; min-height: 130px;
+}
+.cardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.cardTitle { font-size: 14px; font-weight: 600; word-break: break-word; }
+.desc {
+  font-size: 12.5px; color: var(--dsw-alias-label-secondary); line-height: 1.55;
+  /* The clamp needs a bounded box: `flex: 1` would let it grow past three lines. */
+  flex: 0 1 auto; max-height: calc(1.55em * 3);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; font-size: 12px; color: var(--dsw-alias-label-tertiary);
+}
+.foot > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cardActions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+.notice {
+  font-size: 13px; padding: 8px 12px; border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.empty { color: var(--dsw-alias-label-secondary); font-size: 14px; padding: 40px 0; text-align: center; grid-column: 1 / -1; }
+.viewer {
+  white-space: pre-wrap; word-break: break-word; font-size: 12.5px; line-height: 1.6;
+  max-height: 60vh; overflow: auto; min-width: min(680px, 80vw);
+}

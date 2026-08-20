@@ -1,6 +1,13 @@
 # uniclaw-shell
 
-DeepSeek Harness 的 UniClaw（元景网关）集成插件：短信验证码登录 + 套餐/模型目录自动配置 + 扩展-技能（推荐/技能市场/已安装）+ MCP 服务器（内置/自定义）。纯插件实现，不改 harness 核心代码，通过 cordis.yml patch 覆盖层挂载。
+DeepSeek Harness 的 UniClaw（元景网关）集成：短信验证码登录 + 套餐/模型目录自动配置 + 技能（推荐/技能市场/已安装）+ MCP 服务器（内置/自定义）。不改 harness 核心代码，通过 cordis.yml patch 覆盖层挂载。
+
+拆成两个包，因为仓库要求每个包只用一个编译面：
+
+| 包 | 编译面 | 职责 |
+|---|---|---|
+| `packages/uniclaw/uniclaw-shell` | host | 网关代理路由、模型目录物化、技能安装管线、MCP 挂载管理 |
+| `packages/uniclaw/ui-uniclaw` | client | 「技能」「MCP」两个设置页，注册进工作台自带的设置弹窗 |
 
 ## 环境要求
 
@@ -24,13 +31,13 @@ corepack enable          # 推荐；nvm 用户无需 sudo
 pnpm install
 pnpm run build
 
-# 4. 把 patch 里的插件路径改成你自己的绝对路径（harness loader 要求绝对路径）
-#    macOS:
-sed -i '' "s#/Users/bxj/maas/deepseek/deepseek-harness#$(pwd)#" uniclaw-shell/cordis.yml
-#    Linux 去掉 '' 即: sed -i "s#...#$(pwd)#" uniclaw-shell/cordis.yml
+# 5. 把两个包装进 web profile（out-of-tree 插件按 harness 的设计装在 profile 目录）
+cd ~/.dsh/profiles/web
+pnpm add "link:$OLDPWD/packages/uniclaw/uniclaw-shell" "link:$OLDPWD/packages/uniclaw/ui-uniclaw"
+cd -
 
-# 5. 启动
-pnpm dsh web --patch ./uniclaw-shell/cordis.yml
+# 6. 启动
+pnpm dsh web --patch ./packages/uniclaw/uniclaw-shell/cordis.yml
 ```
 
 启动日志出现 `[uniclaw-shell] loaded` 和 `dsh web: http://127.0.0.1:3082` 即成功。
@@ -45,9 +52,9 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
    - 首次使用需 **选择工作区**（添加任意项目目录），否则输入框不可用
    - 模型选择器里选 UniClaw 元景下的模型（DeepSeek V4 Flash / GLM 5.2 / Qwen3 等），直接对话
 
-## 扩展-技能（Skills）
+## 技能（Skills）
 
-打开 **http://127.0.0.1:3082/uniclaw/skills**（与 UniClaw app「扩展 → 技能」同源的三个页签）：
+工作台 → 左下角**设置** → **技能**（与 UniClaw app「扩展 → 技能」同源的三个页签）：
 
 - **推荐**：UniClaw 推荐技能目录（元景网关 `/uniclaw/recommended-skills`），点 `+` 一键安装。安装时校验包大小与 sha256
 - **技能市场**：万悟技能广场（`/wanwu/api/skills/*` 代理），支持分类筛选，点 `+` 安装
@@ -60,7 +67,7 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 
 ## MCP 服务器
 
-技能页「已安装」页签下方是 MCP 服务器管理区，对应 UniClaw app 设置里的 MCP 面板：
+工作台 → **设置** → **MCP**，对应 UniClaw app 设置里的 MCP 面板：
 
 - **内置**（随插件分发，与 UniClaw app 打包 config.json 的 `is_builtin` 三项同源）：
   - `UniAI-Toolkit` — 元景 UniAI 工具集，HTTP。URL 里 `key=` 为空占位，登录后由插件填入当前 app token（等同 UniClaw 后端 `inject_yuanjing_key()`）；套餐 key 轮换时 my-plan 刷新会带新 key 重新挂载。默认开
@@ -80,6 +87,7 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 | 模型请求 401 / `MISSING_CREDENTIAL` | 重新到 `/uniclaw` 登录一次；套餐 key 轮换后每次 my-plan 刷新会自动同步 |
 | 端口被占 | 改 `uniclaw-shell/cordis.yml` 里 `webserver` 的 `port`（默认 3082） |
 | 登录成功但提示"账号暂无可用密钥" | 该手机号没有生效的 UniClaw 套餐（无 app_token 下发），先在 UniClaw 端开通 |
+| 设置里看不到「技能」「MCP」两页 | `ui-uniclaw` 没装进 profile 或没构建；`cd ~/.dsh/profiles/web && pnpm add link:<repo>/packages/uniclaw/ui-uniclaw`，再 `pnpm --filter @deepseek-ai/dsh-client-ui-uniclaw run bundle` |
 | MCP 显示"待登录" | `UniAI-Toolkit` 的 URL 需要 app token，先到 `/uniclaw` 登录；登录后自动挂载 |
 | MCP 开着但"未挂载" | 看启动日志的 `MCP mount failed`：HTTP 多为地址/请求头不对或网络不通，stdio 多为本机没有该命令 |
 
@@ -87,7 +95,8 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 
 - 插件入口：[src/index.ts](src/index.ts)，Host 半侧 only（一期）。零运行时 import（`import type` only），因为它以绝对路径挂载、不在任何 node_modules 解析域内
 - 注册的路由：`/api/uniclaw/login/{captcha,sendCode,smsLogin}`、`/api/uniclaw/my-plan`、`/api/uniclaw/status`（均为元景网关代理）、`/uniclaw`（一期登录页）
-- 技能模块：[src/skills.ts](src/skills.ts)（API + 安装管线 + 内置 zip 解包，页面在 [src/skills-page.ts](src/skills-page.ts)）。前缀路由 `/api/uniclaw/skills`：`GET installed | market/{categories,list,detail} | recommended/{categories,list} | content?name=`，`POST market/install | recommended/install | upload?filename= | toggle | delete`；页面 `/uniclaw/skills`。语义对齐 UniClaw 后端 `routes/skills.py`（安装幂等按市场 id、409 结构化 `skill_conflict`、推荐包 path/size/sha256 校验）
+- 技能模块：[src/skills.ts](src/skills.ts)（API + 安装管线 + 内置 zip 解包）。前缀路由 `/api/uniclaw/skills`：`GET installed | market/{categories,list,detail} | recommended/{categories,list} | content?name=`，`POST market/install | recommended/install | upload?filename= | toggle | delete`。语义对齐 UniClaw 后端 `routes/skills.py`（安装幂等按市场 id、409 结构化 `skill_conflict`、推荐包 path/size/sha256 校验）
+- 客户端半侧：[../ui-uniclaw/src/client/](../ui-uniclaw/src/client/)。`ctx.slots.inject('settings.section', …)` 各注册一页，模板是 `packages/client/ui-settings-models`。两页各持一个 `createSnapshotStore` 控制器，首次打开时加载；目录接口是网关裸透传，行形状在 [api.ts](../ui-uniclaw/src/client/api.ts) 归一化。客户端 bundle 的发现要求包声明 `dsh.client` 并导出 `./client`，改完要重新 `pnpm --filter @deepseek-ai/dsh-client-ui-uniclaw run bundle`
 - 技能包解包为内置最小 zip 读取器（node:zlib inflateRaw，central directory 遍历，拒绝 `..`/绝对路径/zip64），因为绝对路径挂载的插件无法引入 unzip 依赖
 - 内置技能 provider：[src/skills-bundled.ts](src/skills-bundled.ts)（`ctx.skills.registerProvider`，样板是 `dsh-skill-badge`），frontmatter 工具共享在 [src/skill-md.ts](src/skill-md.ts)。技能源拷自 UniClaw `backend/skills/public`（已剔除 `__pycache__`/`.pyc`），更新方式为重拷 + 重启
 - MCP 模块：[src/mcp-builtin.ts](src/mcp-builtin.ts)。内置定义对齐 UniClaw 打包 config.json 的 `is_builtin` 条目；路由 `/api/uniclaw/mcp`：`GET /`、`POST toggle|save|delete`。`requestMcpSync(ctx, appToken)` 串行对账（登录、my-plan 刷新、开关、增删改都走它），mcp-client 以相对源码路径 import（插件按绝对路径挂载，不在任何 node_modules 解析域内，bare specifier 解析不到；桥接插件自身的依赖从它的包目录正常解析）
@@ -96,4 +105,4 @@ pnpm dsh web --patch ./uniclaw-shell/cordis.yml
 - 调试：`UNICLAW_SHELL_DEBUG=1` 启动会多注册 `POST /api/uniclaw/debug/materialize`，可手喂 my-plan payload 测物化，勿在正式环境开
 - 环境变量：`UNICLAW_AUTH_BASE` / `UNICLAW_GATEWAY_BASE` / `UNICLAW_APPLICATION`（企业部署换网关用）；技能模块另有 `UNICLAW_SKILL_MARKET_BASE_URL` / `UNICLAW_RECOMMENDED_SKILLS_BASE_URL`（与 UniClaw app 同名开关）
 
-二期计划：客户端半侧插件（登录卡片进设置页、套餐/用量展示），打包成正式 npm 包消掉绝对路径限制。
+下一步：登录改成 `settings.onboarding` 页（未登录时挡在工作台前），套餐/用量单开一页；再在外面套 Electron 壳（主进程 spawn `dsh web` + 窗口加载本地地址）。
