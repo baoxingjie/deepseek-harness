@@ -1,4 +1,4 @@
-/** Resolve in-box profile plugins from the runtime embedded in Electron's ASAR archive. */
+/** Resolve in-box ESM profile plugins from the runtime embedded in Electron's ASAR archive. */
 
 import { registerHooks, type ResolveHookSync } from 'node:module'
 import { pathToFileURL } from 'node:url'

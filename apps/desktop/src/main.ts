@@ -3,7 +3,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeResolverURL, stopHarness } from './harness-process.ts'
+import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, stopHarness } from './harness-process.ts'
 
 const STARTUP_TIMEOUT_MS = 30_000
 let harness: ChildProcess | undefined
@@ -17,6 +17,7 @@ function startHarness(): Promise<string> {
       ...process.env,
       DSH_DESKTOP_RUNTIME_ANCHOR: join(appPath, 'runtime-build', 'package.json'),
       ELECTRON_RUN_AS_NODE: '1',
+      NODE_PATH: runtimeNodePath(appPath, process.env.NODE_PATH),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -87,15 +88,17 @@ app.on('before-quit', (event) => {
   void stopHarness(harness).finally(() => { app.quit() })
 })
 
-await app.whenReady()
-try {
-  await createWindow(await startHarness())
-} catch (error) {
-  console.error(error)
-  await dialog.showMessageBox({
-    type: 'error',
-    title: 'DeepSeek Harness could not start',
-    message: error instanceof Error ? error.message : String(error),
-  })
-  app.quit()
-}
+// Electron emits ready only after the main module finishes evaluating.
+void app.whenReady().then(async () => {
+  try {
+    await createWindow(await startHarness())
+  } catch (error) {
+    console.error(error)
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'DeepSeek Harness could not start',
+      message: error instanceof Error ? error.message : String(error),
+    })
+    app.quit()
+  }
+})

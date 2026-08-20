@@ -1,7 +1,7 @@
 /** Launch and readiness helpers for the desktop-owned dsh Web child process. */
 
 import type { ChildProcess } from 'node:child_process'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const READY_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)(?: \(LAN: .+\))?$/
@@ -14,6 +14,17 @@ export function runtimeCliPath(appPath: string): string {
 /** Resolve the module fallback hook URL packaged with the desktop main process. */
 export function runtimeResolverURL(appPath: string): string {
   return pathToFileURL(join(appPath, 'lib', 'runtime-resolver.js')).href
+}
+
+/**
+ * Build the CommonJS fallback search path for packages archived with the runtime.
+ * @param appPath - Electron application path, including an ASAR path in packaged builds.
+ * @param inherited - Existing process-level CommonJS search path.
+ * @returns Runtime node_modules followed by any inherited search path.
+ */
+export function runtimeNodePath(appPath: string, inherited?: string): string {
+  const runtime = join(appPath, 'runtime-build', 'node_modules')
+  return inherited === undefined || inherited === '' ? runtime : `${runtime}${delimiter}${inherited}`
 }
 
 /** Arguments that install the ASAR resolver, keep the server loopback-only, and request a free port. */
