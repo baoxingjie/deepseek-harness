@@ -412,6 +412,16 @@ importers:
         version: 10.0.0
 
   apps/desktop:
+    dependencies:
+      '@deepseek-ai/dsh':
+        specifier: workspace:^
+        version: link:../cli
+      '@deepseek-ai/dsh-client-ui-uniclaw':
+        specifier: workspace:^
+        version: link:../../packages/uniclaw/ui-uniclaw
+      '@deepseek-ai/dsh-uniclaw-shell':
+        specifier: workspace:^
+        version: link:../../packages/uniclaw/uniclaw-shell
     devDependencies:
       '@types/node':
         specifier: ^22.20.0

@@ -65,7 +65,10 @@ async function materializeExternalLinks(directory) {
 // already exist in the deployment, and package-local links can reach checkout
 // build artifacts.
 try {
-  await deploy('@deepseek-ai/dsh', stagingDir)
+  // This package's own production closure, not the CLI's: it adds the UniClaw
+  // host and browser plugins the desktop profile mounts, which the CLI does
+  // not depend on.
+  await deploy('@deepseek-ai/dsh-desktop', stagingDir)
   await materializeExternalLinks(stagingDir)
   await runRuntimeScript(resolve(stagingDir, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local', 'scripts', 'ensure-spawn-helper.mjs'))
   await rm(runtimeDir, { recursive: true, force: true })

@@ -24,6 +24,11 @@
     "test": "pnpm --dir ../.. exec vitest run apps/desktop/tests"
   },
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-uniclaw": "workspace:^",
+    "@deepseek-ai/dsh-uniclaw-shell": "workspace:^"
+  },
   "devDependencies": {
     "@types/node": "^22.20.0",
     "electron": "43.4.1",
@@ -44,6 +49,7 @@
     "files": [
       "lib/**",
       "package.json",
+      "config/**",
       "runtime-build/**"
     ],
     "asarUnpack": [

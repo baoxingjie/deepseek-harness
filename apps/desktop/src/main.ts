@@ -3,7 +3,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, stopHarness } from './harness-process.ts'
+import { desktopCliArgs, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, stopHarness, uniclawPatchPath } from './harness-process.ts'
 
 const STARTUP_TIMEOUT_MS = 30_000
 let harness: ChildProcess | undefined
@@ -12,7 +12,7 @@ let quitting = false
 function startHarness(): Promise<string> {
   const appPath = app.getAppPath()
   const cliPath = runtimeCliPath(appPath)
-  const child = spawn(process.execPath, desktopCliArgs(runtimeResolverURL(appPath), cliPath), {
+  const child = spawn(process.execPath, desktopCliArgs(runtimeResolverURL(appPath), cliPath, uniclawPatchPath(appPath)), {
     env: {
       ...process.env,
       DSH_DESKTOP_RUNTIME_ANCHOR: join(appPath, 'runtime-build', 'package.json'),
@@ -25,8 +25,8 @@ function startHarness(): Promise<string> {
   harness = child
   const parser = new ReadinessParser()
   let stderr = ''
-  child.stderr?.setEncoding('utf8')
-  child.stderr?.on('data', (chunk: string) => {
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk: string) => {
     stderr = (stderr + chunk).slice(-8_192)
   })
 
@@ -36,20 +36,22 @@ function startHarness(): Promise<string> {
     }, STARTUP_TIMEOUT_MS)
     const finish = (callback: () => void): void => {
       clearTimeout(timeout)
-      child.stdout?.removeAllListeners('data')
+      child.stdout.removeAllListeners('data')
       child.removeAllListeners('error')
       child.removeAllListeners('exit')
       callback()
     }
-    child.stdout?.setEncoding('utf8')
-    child.stdout?.on('data', (chunk: string) => {
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
       const url = parser.push(chunk)
       if (url !== undefined) finish(() => { resolve(url) })
     })
-    child.once('error', error => finish(() => { reject(error) }))
-    child.once('exit', (code, signal) => finish(() => {
-      reject(new Error(`Desktop runtime exited before startup (code ${String(code)}, signal ${String(signal)}).${stderr === '' ? '' : `\n\n${stderr}`}`))
-    }))
+    child.once('error', (error) => { finish(() => { reject(error) }) })
+    child.once('exit', (code, signal) => {
+      finish(() => {
+        reject(new Error(`Desktop runtime exited before startup (code ${String(code)}, signal ${String(signal)}).${stderr === '' ? '' : `\n\n${stderr}`}`))
+      })
+    })
   })
 }
 

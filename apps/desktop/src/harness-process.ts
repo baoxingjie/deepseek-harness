@@ -6,9 +6,14 @@ import { pathToFileURL } from 'node:url'
 
 const READY_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)(?: \(LAN: .+\))?$/
 
-/** Resolve the deployed CLI entry beneath Electron's resources directory. */
+/**
+ * Resolve the deployed CLI entry beneath Electron's resources directory. The
+ * deployment root is this desktop package (its production closure is what
+ * carries the UniClaw plugins), so the CLI sits in the closure rather than at
+ * the root.
+ */
 export function runtimeCliPath(appPath: string): string {
-  return join(appPath, 'runtime-build', 'lib', 'bin.js')
+  return join(appPath, 'runtime-build', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 }
 
 /** Resolve the module fallback hook URL packaged with the desktop main process. */
@@ -27,9 +32,21 @@ export function runtimeNodePath(appPath: string, inherited?: string): string {
   return inherited === undefined || inherited === '' ? runtime : `${runtime}${delimiter}${inherited}`
 }
 
-/** Arguments that install the ASAR resolver, keep the server loopback-only, and request a free port. */
-export function desktopCliArgs(resolverURL: string, cliPath: string): string[] {
-  return ['--import', resolverURL, '--expose-internals', cliPath, '--profile', 'web', '--host', '127.0.0.1', '--port', '0']
+/** Absolute path of the shipped overlay that mounts the UniClaw plugins. */
+export function uniclawPatchPath(appPath: string): string {
+  return join(appPath, 'config', 'uniclaw.cordis.yml')
+}
+
+/**
+ * Arguments that install the ASAR resolver, mount the UniClaw overlay, keep
+ * the server loopback-only, and request a free port.
+ */
+export function desktopCliArgs(resolverURL: string, cliPath: string, patchPath: string): string[] {
+  return [
+    '--import', resolverURL, '--expose-internals', cliPath,
+    '--profile', 'web', '--patch', patchPath,
+    '--host', '127.0.0.1', '--port', '0',
+  ]
 }
 
 /** Incrementally extract the Web readiness URL from arbitrarily chunked stdout. */
