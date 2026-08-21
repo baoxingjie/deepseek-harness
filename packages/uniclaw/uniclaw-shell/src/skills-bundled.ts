@@ -12,9 +12,10 @@
  * Like the rest of the plugin: node builtins only, workspace packages are
  * `import type` only (mounted by absolute path, outside node_modules).
  */
-import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, readdir, rename, rm, stat, writeFile, mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SkillCandidate, SkillDefinition, SkillProvider } from '@deepseek-ai/dsh-skill'
@@ -25,14 +26,125 @@ const PROVIDER_NAME = 'uniclaw-bundled'
 const BUNDLED_RANK = 600
 const INVOCATION = { modelInvocable: true, userInvocable: true } as const
 
-/** Root of the skill bundles shipped inside the plugin directory. */
-const BUNDLED_DIR = join(dirname(fileURLToPath(import.meta.url)), '../skills')
+/** Package directory holding the shipped skill bundles and the version stamp. */
+const PACKAGE_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
+
+/** Root of the skill bundles as shipped inside the plugin directory. */
+export const SHIPPED_DIR = join(PACKAGE_DIR, 'skills')
+
+/** Resolved `<dshHome>`, honouring the DSH_HOME override. */
+function dshHome(): string {
+  const env = process.env.DSH_HOME
+  return resolve(env !== undefined && env.trim().length > 0 ? env : join(homedir(), '.dsh'))
+}
 
 /** Persisted names of disabled builtin skills. */
 function disabledPath(): string {
-  const env = process.env.DSH_HOME
-  const home = resolve(env !== undefined && env.trim().length > 0 ? env : join(homedir(), '.dsh'))
-  return join(home, 'uniclaw-builtin-disabled.json')
+  return join(dshHome(), 'uniclaw-builtin-disabled.json')
+}
+
+/**
+ * Whether a path traverses an ASAR archive. Electron patches `fs` so the
+ * harness process reads such a path transparently, but the shell, python, and
+ * node subprocesses a skill's own scripts run in get the unpatched syscalls
+ * and see the archive as a plain file. A skill whose SKILL.md invokes
+ * `scripts/*.py` is therefore unusable while its files stay inside one.
+ */
+function insideArchive(path: string): boolean {
+  return path.split(sep).some(segment => segment.endsWith('.asar'))
+}
+
+/** Parent of the per-version materialization targets. */
+function materializeRoot(): string {
+  return join(dshHome(), 'uniclaw-builtin-skills')
+}
+
+/** Shipped package version; unreadable metadata falls back to a fixed name. */
+async function bundleVersion(): Promise<string> {
+  try {
+    const meta: unknown = JSON.parse(await readFile(join(PACKAGE_DIR, 'package.json'), 'utf8'))
+    const version = (meta as { version?: unknown }).version
+    if (typeof version === 'string' && version.length > 0) return version
+  } catch { /* absent or corrupt package metadata falls through to the fixed name */ }
+  return 'unversioned'
+}
+
+/** Accumulate `relative-path:size` for every shipped file, depth-first in directory order. */
+async function digestTree(root: string, prefix: string, hash: ReturnType<typeof createHash>): Promise<void> {
+  for (const dirent of (await readdir(join(root, prefix), { withFileTypes: true }))
+    .sort((a, b) => a.name.localeCompare(b.name))) {
+    const relative = prefix === '' ? dirent.name : `${prefix}/${dirent.name}`
+    if (dirent.isDirectory()) await digestTree(root, relative, hash)
+    else if (dirent.isFile()) hash.update(`${relative}:${String((await stat(join(root, relative))).size)}\n`)
+  }
+}
+
+/**
+ * Name of the materialized copy: the shipped version plus a digest over every
+ * shipped file's path and size. Keying on content rather than version alone
+ * means a reinstall that changes the payload always replaces the copy, including
+ * the release-candidate rebuilds that reuse one version number.
+ * @returns the directory name for the current payload.
+ */
+async function bundleStamp(): Promise<string> {
+  const hash = createHash('sha256')
+  await digestTree(SHIPPED_DIR, '', hash)
+  return `${await bundleVersion()}-${hash.digest('hex').slice(0, 12)}`
+}
+
+/** Recursive copy through `readdir`/`readFile`/`writeFile`, the calls Electron's ASAR shim covers. */
+async function copyTree(from: string, to: string): Promise<void> {
+  await mkdir(to, { recursive: true })
+  for (const dirent of await readdir(from, { withFileTypes: true })) {
+    const source = join(from, dirent.name)
+    const target = join(to, dirent.name)
+    if (dirent.isDirectory()) await copyTree(source, target)
+    else if (dirent.isFile()) await writeFile(target, await readFile(source))
+  }
+}
+
+/**
+ * Resolve the directory the provider serves skills from, materializing the
+ * shipped bundles under `<dshHome>` when they ship inside an ASAR archive.
+ * The copy lands in a temporary sibling and is renamed into place, so an
+ * interrupted run leaves no directory that a later run would mistake for
+ * complete; copies under every other stamp are removed once the current one
+ * exists, so an upgrade or reinstall replaces rather than accumulates.
+ * @returns the absolute serving root.
+ */
+async function resolveServingDir(): Promise<string> {
+  if (!insideArchive(SHIPPED_DIR)) return SHIPPED_DIR
+  const root = materializeRoot()
+  const stamp = await bundleStamp()
+  const target = join(root, stamp)
+  try {
+    await readdir(target)
+  } catch {
+    const staging = `${target}.incoming-${String(process.pid)}`
+    await rm(staging, { recursive: true, force: true })
+    console.log(`[uniclaw-shell] materializing bundled skills into ${target} (shipped inside an archive)`)
+    await copyTree(SHIPPED_DIR, staging)
+    await rename(staging, target).catch(async (error: unknown) => {
+      // A concurrent harness process won the rename; its copy is equivalent.
+      await rm(staging, { recursive: true, force: true })
+      await readdir(target).catch(() => { throw error })
+    })
+  }
+  for (const stale of await readdir(root).catch(() => [])) {
+    if (stale !== stamp) await rm(join(root, stale), { recursive: true, force: true })
+  }
+  return target
+}
+
+let servingDir: Promise<string> | undefined
+
+/**
+ * Serving root for the bundled skills, resolved once per process.
+ * @returns the absolute directory the provider reads skill bundles from.
+ */
+export async function bundledDir(): Promise<string> {
+  servingDir ??= resolveServingDir()
+  return servingDir
 }
 
 /** Set by the provider registration; live-refreshes consumer catalogs on toggle. */
@@ -47,20 +159,21 @@ interface BundledEntry {
 
 let scanned: BundledEntry[] | undefined
 
-/** Scan the shipped bundles once; the plugin directory is immutable at runtime. */
+/** Scan the serving root once; both it and the plugin directory are immutable at runtime. */
 async function scanBundled(): Promise<BundledEntry[]> {
   if (scanned !== undefined) return scanned
+  const root = await bundledDir()
   const entries: BundledEntry[] = []
   let dirents
   try {
-    dirents = await readdir(BUNDLED_DIR, { withFileTypes: true })
+    dirents = await readdir(root, { withFileTypes: true })
   } catch {
     scanned = []
     return scanned // plugin shipped without a skills payload
   }
   for (const dirent of dirents.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!dirent.isDirectory() || dirent.name.startsWith('.')) continue
-    const directory = join(BUNDLED_DIR, dirent.name)
+    const directory = join(root, dirent.name)
     const skillFile = join(directory, 'SKILL.md')
     let fm
     try {
@@ -79,6 +192,10 @@ async function scanBundled(): Promise<BundledEntry[]> {
   return entries
 }
 
+/**
+ * Read the persisted names of disabled builtin skills.
+ * @returns the disabled names; an absent or corrupt list reads as all-enabled.
+ */
 export async function readDisabledSet(): Promise<Set<string>> {
   try {
     const parsed: unknown = JSON.parse(await readFile(disabledPath(), 'utf8'))
@@ -92,7 +209,10 @@ async function writeDisabledSet(disabled: Set<string>): Promise<void> {
   await writeFile(disabledPath(), JSON.stringify([...disabled].sort(), null, 2), 'utf8')
 }
 
-/** Register the bundled-skills provider on `ctx.skills`. */
+/**
+ * Register the bundled-skills provider on `ctx.skills`.
+ * @param ctx - plugin context carrying the skill registry.
+ */
 export function registerBundledSkills(ctx: Context): void {
   const provider: SkillProvider = {
     name: PROVIDER_NAME,
@@ -137,32 +257,48 @@ export function registerBundledSkills(ctx: Context): void {
     control.signal.addEventListener('abort', () => { invalidateCatalog = undefined }, { once: true })
     return provider
   })
-  void scanBundled().then((entries) => {
-    console.log(`[uniclaw-shell] bundled skills provider registered — ${entries.length} skill(s) shipped`)
+  void Promise.all([scanBundled(), readDisabledSet(), bundledDir()]).then(([entries, disabled, root]) => {
+    const enabled = entries.filter(e => !disabled.has(e.name)).length
+    // Says what is on disk, not what a model can see: candidates still have to
+    // survive the registry's name/rank merge. GET /api/uniclaw/diagnostics/skills
+    // reports the merged catalog.
+    console.log(
+      `[uniclaw-shell] bundled skills provider registered — ${enabled}/${entries.length} bundle(s) offered`
+      + ` from ${root}; merged catalog: GET /api/uniclaw/diagnostics/skills`,
+    )
   })
 }
 
 // ── Accessors for the skills management routes (skills.ts) ──
 
+/** One shipped builtin skill with its persisted enabled state. */
 export interface BundledSkill {
   name: string
   description: string
   enabled: boolean
 }
 
-/** List shipped builtin skills with their persisted enabled state. */
+/**
+ * List shipped builtin skills with their persisted enabled state.
+ * @returns one entry per shipped bundle, in directory order.
+ */
 export async function listBundled(): Promise<BundledSkill[]> {
   const [entries, disabled] = await Promise.all([scanBundled(), readDisabledSet()])
   return entries.map(e => ({ name: e.name, description: e.description, enabled: !disabled.has(e.name) }))
 }
 
-/** Names of every shipped builtin skill (for install conflict checks). */
+/**
+ * Names of every shipped builtin skill, for install conflict checks.
+ * @returns the shipped skill names, including disabled ones.
+ */
 export async function bundledNames(): Promise<Set<string>> {
   return new Set((await scanBundled()).map(e => e.name))
 }
 
 /**
  * Persist one builtin skill's enabled state and refresh live catalogs.
+ * @param name - the shipped builtin skill's name.
+ * @param enabled - whether the skill should be offered to consumers.
  * @returns false when the name is not a shipped builtin skill.
  */
 export async function setBundledEnabled(name: string, enabled: boolean): Promise<boolean> {
@@ -176,7 +312,11 @@ export async function setBundledEnabled(name: string, enabled: boolean): Promise
   return true
 }
 
-/** Raw SKILL.md text of one builtin skill, or undefined when not shipped. */
+/**
+ * Read one builtin skill's SKILL.md verbatim, frontmatter included.
+ * @param name - the shipped builtin skill's name.
+ * @returns the raw text, or undefined when the skill is not shipped or unreadable.
+ */
 export async function bundledContent(name: string): Promise<string | undefined> {
   const entry = (await scanBundled()).find(e => e.name === name)
   if (entry === undefined) return undefined

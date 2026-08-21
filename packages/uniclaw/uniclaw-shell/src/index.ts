@@ -24,6 +24,7 @@ import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { registerSkillModule } from './skills.ts'
 import { registerMcpModule, requestMcpSync } from './mcp-builtin.ts'
+import { registerDiagnosticsModule } from './diagnostics.ts'
 
 export const name = 'uniclaw-shell'
 export const inject = ['webServer', 'settings', 'credentials', 'skills']
@@ -258,6 +259,9 @@ export function apply(ctx: Context) {
 
   // ── 扩展-技能 module (marketplace / recommended / installed) ──
   registerSkillModule(ctx)
+
+  // ── Read-only skill-catalog diagnostics ──
+  registerDiagnosticsModule(ctx)
 
   // ── MCP module (builtin + custom servers) ──
   registerMcpModule(ctx)
