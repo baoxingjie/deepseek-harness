@@ -46,3 +46,5 @@ Windows 辅助安装程序提供当前用户和所有用户两种模式；除非
 本地 HTTP 服务器只绑定 `127.0.0.1`；Electron 页面只能在应用源内导航，外部链接交给操作系统浏览器打开。渲染器禁用 Node 集成、启用上下文隔离和 Chromium 沙箱。
 
 构建环境未提供 Windows 或 Apple 签名凭据时，安装包不会签名。未签名安装包会触发操作系统信任警告，仅适用于开发构建。
+
+打包版的 `cordis` preset（创造模式）会丢掉整份技能目录。该 preset 在自己的 preset 目录下额外配了一个技能根，打包后它落在 ASAR 归档内；Electron 为归档路径打了 `fs.readdir` 的补丁，却没有为 `fs.watch` 打，于是文件系统技能 provider 的监视器启动时报 `ENOTDIR`。provider 随即把候选标记为不完整的观测结果，而技能工具宁可一条都不发也不发布可能已经过期的目录——包括其余所有 provider 的技能。单加 `asarUnpack` 无效，因为 `fs.watch` 同样不会被重定向到解包后的副本。只有 `cordis` preset 配了这样的根，因此出厂默认的 `standard` 与其余 preset 不受影响。
