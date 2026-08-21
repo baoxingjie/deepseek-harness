@@ -3,7 +3,7 @@
 # Both entries resolve by bare name. The loader anchors plugin resolution at
 # the profile directory, which carries no node_modules in a packaged install;
 # the runtime resolver hook (ESM) and NODE_PATH (the CJS client-bundle lookup)
-# both fall back to the deployed runtime, where these two packages ship as
+# both fall back to the deployed runtime, where the UniClaw packages ship as
 # dependencies of @deepseek-ai/dsh-desktop.
 
 - insert:
@@ -11,3 +11,9 @@
       name: '@deepseek-ai/dsh-uniclaw-shell'
     - id: ui-uniclaw
       name: '@deepseek-ai/dsh-client-ui-uniclaw'
+    - id: web-search-uniclaw
+      name: '@deepseek-ai/dsh-web-search-uniclaw'
+
+- id: web
+  config:
+    searchProvider: uniclaw

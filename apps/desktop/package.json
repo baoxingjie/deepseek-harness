@@ -28,7 +28,8 @@
   "dependencies": {
     "@deepseek-ai/dsh": "workspace:^",
     "@deepseek-ai/dsh-client-ui-uniclaw": "workspace:^",
-    "@deepseek-ai/dsh-uniclaw-shell": "workspace:^"
+    "@deepseek-ai/dsh-uniclaw-shell": "workspace:^",
+    "@deepseek-ai/dsh-web-search-uniclaw": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

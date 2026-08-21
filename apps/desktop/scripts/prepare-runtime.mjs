@@ -66,8 +66,8 @@ async function materializeExternalLinks(directory) {
 // build artifacts.
 try {
   // This package's own production closure, not the CLI's: it adds the UniClaw
-  // host and browser plugins the desktop profile mounts, which the CLI does
-  // not depend on.
+  // host, browser, and search plugins the desktop profile mounts, which the
+  // CLI does not depend on.
   await deploy('@deepseek-ai/dsh-desktop', stagingDir)
   await materializeExternalLinks(stagingDir)
   await runRuntimeScript(resolve(stagingDir, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local', 'scripts', 'ensure-spawn-helper.mjs'))
