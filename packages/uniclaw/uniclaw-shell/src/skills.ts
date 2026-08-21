@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -508,10 +508,17 @@ function stripCommonRoot(entries: ZipEntry[]): ZipEntry[] {
     .filter(e => e.path !== '')
 }
 
-/** Join a validated relative archive path below dest, rejecting escapes. */
-function safeJoin(dest: string, relPath: string): string {
+/**
+ * Join an archive path below its destination directory.
+ * @param dest - Absolute destination directory.
+ * @param relPath - Archive entry path relative to the destination.
+ * @returns The platform-native target path.
+ * @throws When the entry escapes the destination directory.
+ */
+export function safeJoin(dest: string, relPath: string): string {
   const target = join(dest, relPath)
-  if (target !== dest && !target.startsWith(dest + '/')) {
+  const fromDest = relative(dest, target)
+  if (fromDest === '..' || fromDest.startsWith(`..${sep}`) || isAbsolute(fromDest)) {
     throw new HttpError(400, 'Invalid archive file.')
   }
   return target
