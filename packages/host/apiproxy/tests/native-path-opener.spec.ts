@@ -60,7 +60,7 @@ describe('native path opener', () => {
         [
           '-NoProfile',
           '-Command',
-          "Invoke-Item -LiteralPath '\\\\wsl.localhost\\Ubuntu\\home\\test user\\settings.yaml'",
+          "Start-Process -FilePath 'notepad.exe' -ArgumentList '\"\\\\wsl.localhost\\Ubuntu\\home\\test user\\settings.yaml\"'",
         ],
         requestSignal,
       ],
@@ -97,12 +97,16 @@ describe('native path opener', () => {
     )
   })
 
-  it('uses the Windows desktop association for text documents', async () => {
+  it('uses Windows Notepad for text documents without requiring a file association', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
     await openNativeTextFile('C:\\work\\settings.yaml', signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledWith(
       'powershell.exe',
-      ['-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\work\\settings.yaml'"],
+      [
+        '-NoProfile',
+        '-Command',
+        "Start-Process -FilePath 'notepad.exe' -ArgumentList '\"C:\\work\\settings.yaml\"'",
+      ],
       expect.any(AbortSignal),
     )
   })

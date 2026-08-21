@@ -97,8 +97,18 @@ function isWsl(internals: PathOpenerInternals): boolean {
   return (internals.osRelease ?? osRelease()).toLowerCase().includes('microsoft')
 }
 
-/** Open one Windows-resolvable path through its registered desktop application. */
-async function openWindowsPath(path: string, signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
+/** Open one Windows-resolvable path through its requested desktop application. */
+async function openWindowsPath(
+  path: string, signal: AbortSignal, run: PathOpenerRunner, intent: PathOpenIntent,
+): Promise<void> {
+  if (intent === 'text-editor') {
+    await run('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      `Start-Process -FilePath 'notepad.exe' -ArgumentList ${powershellLiteral(`"${path}"`)}`,
+    ], signal)
+    return
+  }
   await run('powershell.exe', [
     '-NoProfile',
     '-Command',
@@ -107,12 +117,14 @@ async function openWindowsPath(path: string, signal: AbortSignal, run: PathOpene
 }
 
 /** Translate a WSL path before handing it to the Windows desktop. */
-async function openWslPath(path: string, signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
+async function openWslPath(
+  path: string, signal: AbortSignal, run: PathOpenerRunner, intent: PathOpenIntent,
+): Promise<void> {
   const translated = await run('wslpath', ['-w', path], signal)
   signal.throwIfAborted()
   const windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
   if (windowsPath === '') throw new Error('wslpath returned no Windows path')
-  await openWindowsPath(windowsPath, signal, run)
+  await openWindowsPath(windowsPath, signal, run, intent)
 }
 
 /** Dispatch one shell-free platform command for the requested open intent. */
@@ -136,13 +148,13 @@ async function openNativePathWithIntent(
   }
 
   if (platform === 'win32') {
-    await openWindowsPath(path, signal, run)
+    await openWindowsPath(path, signal, run, intent)
     return
   }
 
   if (platform === 'linux') {
     if (wsl) {
-      await openWslPath(path, signal, run)
+      await openWslPath(path, signal, run, intent)
       return
     }
     await run('xdg-open', [path], signal)

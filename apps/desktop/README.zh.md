@@ -1,10 +1,10 @@
-# DeepSeek Harness 桌面应用
+# uniclaw-dsh 桌面应用
 
 [English](README.md) | 中文
 
-桌面应用把现有 Web GUI 和 Harness 运行时打包为 Electron 应用。它会在回环地址上以操作系统分配的端口启动 `dsh --profile web`，等待启动器输出就绪信息，然后在沙箱化渲染器中打开该地址。关闭应用时，桌面主进程会先要求 Harness 进程释放插件树；超过限定宽限期后才会强制终止。
+`uniclaw-dsh` 桌面应用把现有 Web GUI 和 Harness 运行时打包为 Electron 应用。它会在回环地址上以操作系统分配的端口启动 `dsh --profile web`，等待启动器输出就绪信息，然后在沙箱化渲染器中打开该地址。关闭应用时，桌面主进程会先要求 Harness 进程释放插件树；超过限定宽限期后才会强制终止。
 
-窗口会立即打开一个本地加载页，运行时应答后再切到服务地址，因此启动较慢时不会看起来像启动失败。单实例锁保证每个用户只有一个运行时：再次启动、或从程序坞激活应用，都只会唤起已有窗口，而不会再占一个端口。
+窗口会立即打开一个本地加载页，运行时应答后再切到服务地址，因此启动较慢时不会看起来像启动失败。就绪信息可能比回环监听器接受首个连接略早到达 Electron，因此首次导航会在限定时间内重试被拒绝的连接；其他导航错误仍会直接失败。单实例锁保证每个用户只有一个运行时：再次启动、或从程序坞激活应用，都只会唤起已有窗口，而不会再占一个端口。
 
 ## 内置 UniClaw 插件
 
@@ -16,10 +16,9 @@
 
 ## 构建安装包
 
-先构建仓库中的全部产物，再在目标操作系统上运行对应命令：
+在目标操作系统上运行对应命令。每条命令都会先构建仓库中的全部产物，再部署桌面运行时，因此从干净 checkout 打包时不会漏掉 workspace 依赖的 `lib/` 入口：
 
 ```sh
-pnpm run build
 pnpm --filter @deepseek-ai/dsh-desktop run dist:win
 pnpm --filter @deepseek-ai/dsh-desktop run dist:mac
 ```
@@ -38,7 +37,7 @@ apps/desktop/scripts/build-mac.sh --skip-runtime
 
 打包步骤使用 pnpm 的 production deploy 模式、注入的 workspace 包和 hoisted 依赖树创建被忽略的 `runtime-build/` 目录。CLI manifest 显式闭合了组装后 profile 的插件 peer 依赖，包括构建后的 Web 前端。准备过程在 workspace 外的暂存目录中执行，把指向部署目录外的链接替换为包文件，并执行必要的 spawn-helper 权限修复。该生成目录不得提交。
 
-Electron Builder 把运行时存入 `app.asar`，只把原生模块和可执行文件留在 `app.asar.unpacked`。子进程在 CLI 启动前安装 ESM 解析钩子，并把归档内的依赖目录加入 `NODE_PATH`，供锚定在 profile 本地配置上的 CommonJS 包元数据查询使用。普通本地解析保持优先；无法解析的内置包才回退到 ASAR 内的运行时。这样既能发布完整的浏览器插件名录，又能避免安装数万个依赖文件，并且不改变 profile 本地插件的优先级。正式发布还应进行代码签名，因为实时恶意软件扫描会明显拖慢未签名安装包的生成和安装。
+Electron Builder 把运行时存入 `app.asar`，只把原生模块和可执行文件留在 `app.asar.unpacked`。子进程启用 Electron 的内部 ASAR 支持，在 CLI 启动前安装 ESM 解析钩子，并把归档内的依赖目录加入 `NODE_PATH`，供锚定在 profile 本地配置上的 CommonJS 包元数据查询使用。普通本地解析保持优先；无法解析的内置包才回退到 ASAR 内的运行时。这样既能发布完整的浏览器插件名录，又能避免安装数万个依赖文件，并且不改变 profile 本地插件的优先级。正式发布还应进行代码签名，因为实时恶意软件扫描会明显拖慢未签名安装包的生成和安装。
 
 Windows 辅助安装程序提供当前用户和所有用户两种模式；除非每个账户都需要该应用，否则应优先选择当前用户安装。升级或删除已有的所有用户安装需要管理员权限，未提升权限的安装程序可能因此表现为长时间停滞。自动执行当前用户安装时可传入 `/currentuser /S`。
 

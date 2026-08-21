@@ -10,9 +10,9 @@ Status: implemented
 
 ## Decision
 
-`apps/desktop` 是已发布 Web profile 的 Electron 外壳。主进程通过 Electron 的 Node 模式启动部署后的 `dsh` CLI，让服务器在 `127.0.0.1` 上使用操作系统分配的端口监听，并等待现有 `dsh web:` 就绪信息后再显示窗口。主模块在 `app.whenReady()` 解析后安排这些工作，但不会在模块求值期间等待就绪，因为 Electron 只有在主模块求值完成后才会发出就绪事件。渲染器沿用现有 HTTP、SSE、静态文件、插件和权限路径。
+`apps/desktop` 是已发布 Web profile 的 `uniclaw-dsh` Electron 外壳。主进程通过 Electron 的 Node 模式启动部署后的 `dsh` CLI，让服务器在 `127.0.0.1` 上使用操作系统分配的端口监听，并等待现有 `dsh web:` 就绪信息后再显示窗口。子进程命令启用 Electron 的内部 ASAR 支持，在把 CLI 入口作为脚本传入前加载解析钩子。就绪信息可能早于监听器接受首个连接，因此 Electron 只对 `ERR_CONNECTION_REFUSED` 进行有界重试，超过期限后才把导航视为失败。主模块在 `app.whenReady()` 解析后安排这些工作，但不会在模块求值期间等待就绪，因为 Electron 只有在主模块求值完成后才会发出就绪事件。渲染器沿用现有 HTTP、SSE、静态文件、插件和权限路径。Electron Builder、可执行文件、应用用户模型 ID、窗口标题和安装包产物统一使用同一个产品名称和内置应用图标。
 
-打包后的应用携带由 pnpm production deploy 创建的运行时，并使用注入的 workspace 包和 hoisted 依赖树。准备过程使用 workspace 外的暂存目录，把指向部署目录外的链接替换为包文件，并在禁用生命周期脚本后执行必要的 spawn-helper 权限修复。在 workspace 外暂存可以防止 pnpm 把生成输出当成另一个 workspace 成员；复制前先 unlink 外部符号链接，可以防止 Windows 目录链接把生成内容写回源包。Electron Builder 将这个自包含生产依赖树存入 `app.asar`，只解包原生模块和可执行文件；桌面应用源码不维护第二份依赖清单。Windows 构建生成 NSIS 安装程序；macOS 构建生成 DMG 和 ZIP，CI 矩阵在各自原生操作系统上构建目标产物。
+打包后的应用携带由 pnpm production deploy 创建的运行时，并使用注入的 workspace 包和 hoisted 依赖树。每条桌面分发命令都会在部署前构建仓库中的全部产物，因此即使从干净 checkout 开始，注入的 workspace 包也包含其声明的 `lib/` 入口。准备过程使用 workspace 外的暂存目录，把指向部署目录外的链接替换为包文件，并在禁用生命周期脚本后执行必要的 spawn-helper 权限修复。在 workspace 外暂存可以防止 pnpm 把生成输出当成另一个 workspace 成员；复制前先 unlink 外部符号链接，可以防止 Windows 目录链接把生成内容写回源包。Electron Builder 将这个自包含生产依赖树存入 `app.asar`，只解包原生模块和可执行文件；桌面应用源码不维护第二份依赖清单。Windows 构建生成 NSIS 安装程序；macOS 构建生成 DMG 和 ZIP，CI 矩阵在各自原生操作系统上构建目标产物。
 
 桌面子进程在 CLI 之前加载同步 Node 解析钩子。普通 ESM 解析优先执行，以保留 profile 本地依赖的优先级；只有缺失的裸包说明符才从 ASAR 内的运行时 manifest 重试。子进程还把归档内的依赖目录放在 `NODE_PATH` 首位：浏览器名录使用锚定在 profile 本地配置上的 `createRequire()` 解析包元数据，而普通 Windows 目录链接无法指向 ASAR 虚拟目录。这两个机制共同取代 ESM 加载和 CommonJS 元数据解析所需的实体包目录 fallback。
 

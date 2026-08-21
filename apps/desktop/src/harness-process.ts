@@ -71,6 +71,26 @@ export class ReadinessParser {
   }
 }
 
+/**
+ * Retry a local page load while the announced server port begins accepting connections.
+ * @param load - One attempt to load the announced URL.
+ * @param retryDelayMs - Delay between refused connections.
+ * @param timeoutMs - Maximum time allowed for refused connections.
+ * @returns After the page loads successfully.
+ */
+export async function loadWhenListening(load: () => Promise<void>, retryDelayMs = 100, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (true) {
+    try {
+      await load()
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ERR_CONNECTION_REFUSED' || Date.now() >= deadline) throw error
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs))
+    }
+  }
+}
+
 /** Ask the child to dispose its plugin tree, then force termination after the grace period. */
 export function stopHarness(child: ChildProcess, graceMs = 7_000): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()

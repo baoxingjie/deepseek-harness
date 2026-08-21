@@ -3,9 +3,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { desktopCliArgs, loadingPagePath, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, stopHarness, uniclawPatchPath } from './harness-process.ts'
+import { desktopCliArgs, loadingPagePath, loadWhenListening, ReadinessParser, runtimeCliPath, runtimeNodePath, runtimeResolverURL, stopHarness, uniclawPatchPath } from './harness-process.ts'
 
 const STARTUP_TIMEOUT_MS = 30_000
+const PRODUCT_NAME = 'uniclaw-dsh'
 let harness: ChildProcess | undefined
 let quitting = false
 let mainWindow: BrowserWindow | undefined
@@ -71,6 +72,8 @@ function startHarness(): Promise<string> {
  */
 async function openLoadingWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
+    title: PRODUCT_NAME,
+    icon: join(app.getAppPath(), 'build', 'icon.png'),
     width: 1280,
     height: 840,
     minWidth: 900,
@@ -85,6 +88,10 @@ async function openLoadingWindow(): Promise<BrowserWindow> {
   })
   mainWindow = window
   window.on('closed', () => { mainWindow = undefined })
+  window.on('page-title-updated', (event) => {
+    event.preventDefault()
+    window.setTitle(PRODUCT_NAME)
+  })
   window.once('ready-to-show', () => { window.show() })
   await window.loadFile(loadingPagePath(app.getAppPath()))
   return window
@@ -105,7 +112,7 @@ async function showHarness(window: BrowserWindow, url: string): Promise<void> {
     event.preventDefault()
     void shell.openExternal(target)
   })
-  await window.loadURL(url)
+  await loadWhenListening(() => window.loadURL(url))
 }
 
 app.on('window-all-closed', () => { app.quit() })
@@ -119,11 +126,13 @@ app.on('before-quit', (event) => {
   void stopHarness(harness).finally(() => { app.quit() })
 })
 
+app.setName(PRODUCT_NAME)
 // A second instance must not spawn a second runtime on a second port; the
 // lock has to be taken before anything else starts.
 if (app.requestSingleInstanceLock()) {
   // Electron emits ready only after the main module finishes evaluating.
   void app.whenReady().then(async () => {
+    if (process.platform === 'win32') app.setAppUserModelId('ai.uniclaw.dsh')
     let window: BrowserWindow | undefined
     try {
       window = await openLoadingWindow()
@@ -133,7 +142,7 @@ if (app.requestSingleInstanceLock()) {
       window?.destroy()
       await dialog.showMessageBox({
         type: 'error',
-        title: 'DeepSeek Harness could not start',
+        title: `${PRODUCT_NAME} could not start`,
         message: error instanceof Error ? error.message : String(error),
       })
       app.quit()

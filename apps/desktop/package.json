@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "description": "Electron desktop application for DeepSeek Harness",
+  "description": "uniclaw-dsh Electron desktop application",
   "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
@@ -18,9 +18,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsdown",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
-    "dist:dir": "pnpm run build && pnpm run prepare:runtime && electron-builder --dir -c.mac.identity=null",
-    "dist:win": "pnpm run build && pnpm run prepare:runtime && electron-builder --win nsis",
-    "dist:mac": "pnpm run build && pnpm run prepare:runtime && electron-builder --mac dmg zip",
+    "dist:dir": "pnpm --dir ../.. run build && pnpm run prepare:runtime && electron-builder --dir -c.mac.identity=null",
+    "dist:win": "pnpm --dir ../.. run build && pnpm run prepare:runtime && electron-builder --win nsis",
+    "dist:mac": "pnpm --dir ../.. run build && pnpm run prepare:runtime && electron-builder --mac dmg zip",
     "dist:mac:unsigned": "bash scripts/build-mac.sh",
     "test": "pnpm --dir ../.. exec vitest run apps/desktop/tests"
   },
@@ -39,16 +39,19 @@
     "vitest": "^4.1.8"
   },
   "build": {
-    "appId": "ai.deepseek.harness",
-    "productName": "DeepSeek Harness",
+    "appId": "ai.uniclaw.dsh",
+    "productName": "uniclaw-dsh",
+    "executableName": "uniclaw-dsh",
     "asar": true,
     "npmRebuild": false,
     "electronDist": "node_modules/electron/dist",
     "directories": {
+      "buildResources": "build",
       "output": "dist/installers"
     },
     "files": [
       "lib/**",
+      "build/icon.png",
       "package.json",
       "config/**",
       "runtime-build/**"
@@ -58,21 +61,25 @@
     ],
     "win": {
       "target": "nsis",
-      "artifactName": "DeepSeek-Harness-${version}-Windows-${arch}.${ext}"
+      "icon": "build/icon.ico",
+      "artifactName": "uniclaw-dsh-${version}-Windows-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
+      "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools",
-      "artifactName": "DeepSeek-Harness-${version}-macOS-${arch}.${ext}"
+      "artifactName": "uniclaw-dsh-${version}-macOS-${arch}.${ext}"
     }
   }
 }

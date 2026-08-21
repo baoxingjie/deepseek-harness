@@ -67,7 +67,8 @@ export interface SettingsApi {
   /**
    * Materialize the configured local document when absent and ask the Host to
    * hand it to the platform text-document opener. macOS forces a text editor;
-   * Linux and Windows use the desktop file association. The request carries
+   * Windows uses Notepad so a fresh installation needs no YAML file association;
+   * Linux uses the desktop file association. The request carries
    * no path, so the browser cannot choose an arbitrary Host filesystem target.
    */
   openDocument(
